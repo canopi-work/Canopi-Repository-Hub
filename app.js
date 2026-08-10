@@ -122,6 +122,7 @@
   const MEETINGS_TEAM_WEEKLY = [
     { title: '26-07-23 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQBvGPkIfOIcTLvjdvtR24eqAfFmDPjsqMTUjwMnEVVSh-A?e=PIeAEs' },
     { title: '26-07-30 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQBvGPkIfOIcTLvjdvtR24eqATjXUvJhhKp2Zybd-d3D2fg?e=bgOhO7' },
+    { title: 'Dev Sync', tag: 'Published v1', tagClass: 'tag-accent', href: 'files/Dev_Sync.docx', download: true },
   ];
   const PROJECTS_COMPLETED_ARCHIVE = [
     { title: 'Sales Deck 2025 Q4', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:p:/g/personal/angela_canopi_work/IQCKQX8fw_jIWyxUHQ8hV9UXAWgVurvgJ9SVtT7uZYgJS5A?e=Sen75U' },
@@ -481,7 +482,7 @@
     'meetings-team-weekly': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Meetings', route: 'meetings' }, { label: 'Team Meetings', route: 'meetings-team' }, { label: 'Weekly Team Meeting Notes' }],
       'Weekly Team Meeting Notes', 'Minutes from the weekly team meeting.',
-      MEETINGS_TEAM_WEEKLY.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
+      MEETINGS_TEAM_WEEKLY.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefDownload: !!s.download, hrefExternal: !s.download }))
     ) + contributeButtonHTML('Have another document to add?'),
     'projects-completed-archive': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Projects', route: 'projects' }, { label: 'Completed Projects', route: 'projects-completed' }, { label: 'Project Archive' }],
@@ -553,7 +554,7 @@
   indexFrom(PROJECTS_DOCUMENTATION_ADRS, 'Projects \u203a Documentation \u203a ADRs', (s) => s.href ? { href: s.href, external: true } : null);
   indexFrom(PROJECTS_DOCUMENTATION_STAKEHOLDER, 'Projects \u203a Documentation \u203a Stakeholder\u2019s Records', (s) => s.href ? { href: s.href, external: true } : null);
   indexFrom(PROJECTS_COMPLETED_MARKET_RESEARCH, 'Projects \u203a Completed Projects \u203a Market Research', (s) => s.href ? { href: s.href, external: true } : null);
-  indexFrom(MEETINGS_TEAM_WEEKLY, 'Meetings \u203a Team Meetings \u203a Weekly Team Meeting Notes', (s) => s.href ? { href: s.href, external: true } : null);
+  indexFrom(MEETINGS_TEAM_WEEKLY, 'Meetings \u203a Team Meetings \u203a Weekly Team Meeting Notes', (s) => s.href ? (s.download ? { href: s.href, download: true } : { href: s.href, external: true }) : null);
   indexFrom(PROJECTS_COMPLETED_ARCHIVE, 'Projects \u203a Completed Projects \u203a Project Archive', (s) => s.href ? { href: s.href, external: true } : null);
   indexFrom(PROJECTS_DOCUMENTATION_TECHDESIGN, 'Projects \u203a Documentation \u203a Technical Design Docs', (s) => s.href ? { href: s.href, external: true } : null);
   indexFrom(TEAM_ENGINEERING_SHARED, 'Team Spaces \u203a Engineering Team \u203a Shared Resources', (s) => s.href ? { href: s.href, external: true } : null);
