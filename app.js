@@ -124,7 +124,7 @@
     { title: '26-07-30 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQAoUkCNAUD8TrHJYPNogBlXAepocAYNGahOgtXFUW7509c?e=WHdNbe' },
     { title: '26-08-06 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQAbA1P-Z-T4R53_bKpgsqjkAUdpvZbvGe0-Nf3K3aeuC1M?e=6de7Sq' },
     { title: '26-08-13 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQDnel_cOL2GTZ68gxfhM1qxAfwNjUj5SIC93Qh2NPmms2Y?e=8jYxga' },
-    { title: '26-08-20 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQDePK77FACXSY-9fdaN484fAeOcb90LiAmpEgd0ulzJuLg?e=92NVct' },
+    { title: '26-08-20 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQAKwnPm_IFHQodWB0RApumjAf4nrcH-axPCoblltIWN0mg?e=aejEyI' },
   ];
   const PROJECTS_COMPLETED_ARCHIVE = [
     { title: 'Sales Deck 2025 Q4', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:p:/g/personal/angela_canopi_work/IQCKQX8fw_jIWyxUHQ8hV9UXAWgVurvgJ9SVtT7uZYgJS5A?e=Sen75U' },
