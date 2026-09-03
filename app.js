@@ -87,12 +87,12 @@
   ];
 
   const RESOURCE_INVESTOR_DOCS = [
-    { title: 'Investor Question Bank', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/dixon_canopi_work/IQBk3Rj6zB4qTra5ZO8RW6btAVmqgr_4Qg9NT_mwzTojYEg?e=XdPfdL' },
-    { title: 'Investor Roadmap Q3 2026', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/dixon_canopi_work/IQCOvEiEus2kT5An0WM-gSUaAeeTwffx2J6tMD3JZEMxpbE?e=yZLQ9r' },
-    { title: 'Diligence Package', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/dixon_canopi_work/IQBQncYDzp2tQ5PC_iG7JEvsAXvI_bQQANxCYk-zbt_ue_4?e=Rjh047' },
+    { title: 'Investor Question Bank', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQAtylX5sBjiTJeXmHdzV5UaAbWP78omt8hgQf8bOlpW4W4?e=IbeVfA' },
+    { title: 'Investor Roadmap Q3 2026', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQCIrfwE0BQ7RIP4r20hoIOCAWOHMyNYTGiB5x5FcwMa6v8?e=hlYLen' },
+    { title: 'Diligence Package', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQCxGCsPmMfcQY1tyRHDhPrZAQgHJiWZRvZF0FFGMvZlaFw?e=mbXSUk' },
   ];
   const RESOURCE_INVESTOR_DECKS = [
-    { title: '2026 Q2 Pitch Deck', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:p:/g/personal/dixon_canopi_work/IQCHyKAvJGmkTqt2eSt01FGIAQZpooPnL5OiQEuiwPjQqUo?e=134W1b' },
+    { title: '2026 Q2 Pitch Deck', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:p:/g/personal/angela_canopi_work/IQCc4vjhNSQhQ6lilq7PVdOJAVq9R8eFFPnzaROLRJOxGJM?e=KViBj0' },
   ];
 
   const TEAM_PRODUCT_SHARED = [
