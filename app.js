@@ -120,6 +120,7 @@
     { title: 'Market Validation Research', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/r/personal/dixon_canopi_work/Documents/Dixon%20files%20to%20import/Canopi_Market_Validation_Research.docx?d=w8715d85a360748eeb5b1018850dbdd8c&csf=1&web=1&e=e8pGFS' },
   ];
   const MEETINGS_TEAM_WEEKLY = [
+    { title: '26-09-17 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQDY2zd0m0mJTZeXebJDjC55AQx8W8YiIMSQqtGiTwndfXE?e=9QTGPE' },
     { title: '26-09-10 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQDD1e51vOxvQITDX3OGjtdRAWOqklXk-YUNTXOP8wET7e8?e=Ssz2Sm' },
     { title: '26-09-03 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQASXv5Z_D4MS4mibIJLlj8yAT6n7BW74o9GHEcbQEgqHW4?e=MKMXLk' },
     { title: '26-08-27 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQD-FNy8ZKmVRoilg1yVbGHuAbDnR_8DAVjPmxnlwxmhymE?e=bOk3t1' },
