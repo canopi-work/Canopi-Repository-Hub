@@ -1415,9 +1415,14 @@
       form.file.files = e.dataTransfer.files;
       pickFile(form.file.files[0]);
     });
-    form.url.addEventListener('change', () => {
+    // Suggest a title as soon as a link is pasted, but never overwrite one the member typed.
+    let suggestedTitle = '';
+    form.url.addEventListener('input', () => {
+      const current = form.title.value.trim();
+      if (current && current !== suggestedTitle) return;
       const embed = linkEmbed(form.url.value.trim());
-      if (embed && !form.title.value.trim()) form.title.value = embed.provider + ' ' + embed.type.toLowerCase();
+      suggestedTitle = embed ? embed.provider + ' ' + embed.type.toLowerCase() : '';
+      form.title.value = suggestedTitle;
     });
     uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
 
@@ -1539,24 +1544,44 @@
     try { localStorage.setItem('canopi_recently_viewed', JSON.stringify(items)); } catch (e) {}
   }
 
+  function timeAgo(iso) {
+    const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return mins + ' min ago';
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return days + ' days ago';
+    return formatDate(iso);
+  }
+
+  // The five newest files and links anyone has added, newest first.
+  function recentUpdatesHTML() {
+    if (!UPLOADS.length) {
+      return '<div class="panel"><div class="panel-empty">Nothing added yet. New files and links will show up here as soon as someone adds them.</div></div>';
+    }
+    return UPLOADS.slice(0, 5).map((d, i) => {
+      const who = uploaderName(d);
+      return '<a href="#' + VIEW_PREFIX + d.id + '" class="update-row' + (i === 0 ? ' featured' : '') + '">' +
+        '<span class="update-avatar" title="' + escapeHtml(d.uploader_email || who) + '">' + escapeHtml(who[0].toUpperCase()) + '</span>' +
+        '<span class="update-title">' + escapeHtml(d.title) +
+          '<span class="update-sub">' + escapeHtml(who) + ' added to ' + escapeHtml(TITLES[d.section] || d.section) + '</span></span>' +
+        '<span class="update-meta" title="' + escapeHtml(new Date(d.created_at).toLocaleString()) + '">' + timeAgo(d.created_at) + '</span></a>';
+    }).join('');
+  }
+
+  // Pull the latest list so additions from other members appear without a reload.
+  async function refreshRecentUpdates() {
+    if (!document.getElementById('recent-updates')) return;
+    await loadUploads();
+    const el = document.getElementById('recent-updates');
+    if (el) el.innerHTML = recentUpdatesHTML();
+  }
+  setInterval(() => { if (!document.hidden) refreshRecentUpdates(); }, 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRecentUpdates(); });
+
   function homeHTML() {
-    // Latest member uploads first; the hand-picked list fills in until there are some.
-    const recentUploads = UPLOADS.slice(0, 5).map((d) => ({
-      title: escapeHtml(d.title), meta: formatDate(d.created_at), route: VIEW_PREFIX + d.id,
-    }));
-    const recentUpdates = recentUploads.length ? recentUploads : [
-      { title: "Stakeholder's Records", meta: 'Today', route: 'projects-documentation-raci' },
-      { title: 'Engineering Team Shared Resources', meta: 'Today', route: 'team-engineering-shared' },
-      { title: 'Technical Design Docs', meta: 'Today', route: 'projects-documentation-techdesign' },
-      { title: 'Project Archive', meta: 'Today', route: 'projects-completed-archive' },
-      { title: 'Templates', meta: 'Today', route: 'resources-templates' },
-    ];
-    const updateRows = recentUpdates.map((u, i) =>
-      '<a href="#' + u.route + '" class="update-row' + (i === 0 ? ' featured' : '') + '">' +
-      '<span class="update-avatar">' + u.title[0] + '</span>' +
-      '<span class="update-title">' + u.title + '</span>' +
-      '<span class="update-meta">' + u.meta + '</span></a>'
-    ).join('');
 
     const viewed = recentlyViewedList();
     const viewedHTML = viewed.length
@@ -1581,7 +1606,7 @@
       <div class="two-col">
         <div>
           <p class="eyebrow">Recent updates</p>
-          <div class="update-list">${updateRows}</div>
+          <div class="update-list" id="recent-updates">${recentUpdatesHTML()}</div>
           <p class="eyebrow">Company announcements</p>
           <div class="panel"><div class="panel-empty">Add an announcement here</div></div>
         </div>
@@ -1638,6 +1663,7 @@
     recordRecentlyViewed(route);
     wireSearch();
     if (viewId) fillFilePreview(viewId);
+    if (route === 'home') refreshRecentUpdates();
   }
 
   function searchResultHTML(item) {
