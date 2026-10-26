@@ -182,9 +182,6 @@
     SHAREPOINT_DOCS[key] = { title: item.title, href: item.href, section, kind };
     SHAREPOINT_KEY_BY_HREF[item.href] = key;
   }));
-  function sharePointEmbedUrl(href) {
-    return href + (href.indexOf('?') === -1 ? '?' : '&') + 'action=embedview';
-  }
 
   // Recurring 1:1 pairs — [display label (plain text), route slug]
   const RECURRING_1ON1_PAIRS = [
@@ -308,7 +305,11 @@
   function docRowHTML(d) {
     let link;
     if (d.route) link = '<a href="#' + d.route + '"><span>' + d.title + '</span></a>';
-    else if (d.hrefExternal && SHAREPOINT_KEY_BY_HREF[d.href]) link = '<a href="#' + DOC_PREFIX + SHAREPOINT_KEY_BY_HREF[d.href] + '"><span>' + d.title + '</span></a>';
+    else if (d.hrefExternal && SHAREPOINT_KEY_BY_HREF[d.href]) {
+      const key = SHAREPOINT_KEY_BY_HREF[d.href];
+      const copy = uploadedCopyOf(SHAREPOINT_DOCS[key]);
+      link = '<a href="#' + (copy ? VIEW_PREFIX + copy.id : DOC_PREFIX + key) + '"><span>' + d.title + '</span></a>';
+    }
     else if (d.hrefExternal) link = '<a href="' + d.href + '" target="_blank" rel="noopener"><span>' + d.title + '</span></a>';
     else if (d.hrefDownload) link = '<a href="' + d.href + '" download><span>' + d.title + '</span></a>';
     else link = '<span class="plain">' + d.title + '</span>';
@@ -1294,7 +1295,8 @@
       '</span></div>';
   }
   function uploadsSectionHTML(route, standalone) {
-    const docs = uploadsFor(route);
+    const copies = copyIdsOfSharePointDocs();
+    const docs = uploadsFor(route).filter((d) => !copies[d.id]);
     const list = docs.length
       ? '<div class="doclist">' + docs.map(uploadRowHTML).join('') + '</div>'
       : '<p class="section-lead">Nothing added here yet.</p>';
@@ -1343,6 +1345,18 @@
       '</div>';
   }
 
+  // SharePoint refuses to be shown inside other sites, so a SharePoint document is
+  // viewed here once someone uploads a copy with the same title to the same section.
+  function normTitle(t) { return String(t).toLowerCase().replace(/\.[a-z0-9]{2,5}$/, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function uploadedCopyOf(doc) {
+    return UPLOADS.find((u) => u.section === doc.section && normTitle(u.title) === normTitle(doc.title));
+  }
+  function copyIdsOfSharePointDocs() {
+    const ids = {};
+    Object.keys(SHAREPOINT_DOCS).forEach((k) => { const c = uploadedCopyOf(SHAREPOINT_DOCS[k]); if (c) ids[c.id] = true; });
+    return ids;
+  }
+
   function sharePointViewerHTML(doc) {
     const group = sectionGroup(doc.section);
     return crumb([
@@ -1353,11 +1367,17 @@
     ]) +
       '<h1>' + escapeHtml(doc.title) + '</h1>' +
       '<p class="detail-meta"><span class="tag tag-outline">' + doc.kind + '</span> Stored in SharePoint</p>' +
-      '<div class="viewer-actions">' +
-        '<a class="btn btn-secondary" href="' + escapeHtml(doc.href) + '" target="_blank" rel="noopener">Open in SharePoint &#8599;</a>' +
-      '</div>' +
-      frameHTML(sharePointEmbedUrl(doc.href)) +
-      '<p class="viewer-note">Shown from SharePoint. If it asks you to sign in or stays blank, sign in to Microsoft 365 in this browser, or use Open in SharePoint.</p>';
+      '<div class="empty-state viewer-empty">' +
+        '<span class="empty-state-icon">' + icon(ICON_UPLOAD, 30) + '</span>' +
+        '<p class="empty-state-title">Not viewable here yet</p>' +
+        '<p class="empty-state-body">SharePoint doesn&rsquo;t allow its documents to be shown inside other sites. ' +
+          'Upload a PDF copy and it&rsquo;ll open right here for every signed-in member.</p>' +
+        '<div class="viewer-actions viewer-actions-center">' +
+          '<button type="button" class="btn btn-primary" data-upload="' + doc.section + '" data-upload-title="' + escapeHtml(doc.title) + '">' + icon(ICON_UPLOAD, 16) + 'Upload PDF copy</button>' +
+          '<a class="btn btn-secondary" href="' + escapeHtml(doc.href) + '" target="_blank" rel="noopener">Open in SharePoint &#8599;</a>' +
+        '</div>' +
+        '<p class="viewer-note">To get a PDF: open it in SharePoint, then File &rsaquo; Save As (or Export) &rsaquo; Download as PDF.</p>' +
+      '</div>';
   }
 
   // Uploaded files need a signed link before they can be shown; fill the preview in once we have it.
@@ -1402,6 +1422,20 @@
     else render();
   }
 
+  async function uploadOne(file, section, title, owner) {
+    const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+    const path = CURRENT_USER.id + '/' + crypto.randomUUID() + '/' + safeName;
+    let error = (await db.storage.from('documents').upload(path, file, { contentType: file.type || 'application/octet-stream' })).error;
+    if (!error) {
+      error = (await db.from('documents').insert(Object.assign({
+        section, title, file_path: path, file_name: file.name,
+        mime_type: file.type || null, size_bytes: file.size,
+      }, owner))).error;
+      if (error) await db.storage.from('documents').remove([path]);
+    }
+    return error;
+  }
+
   // ---------- add dialog: upload a file or add a link ----------
   const uploadDialog = document.createElement('dialog');
   uploadDialog.className = 'modal';
@@ -1418,7 +1452,7 @@
     ).join('');
   }
 
-  function openUploadDialog(route) {
+  function openUploadDialog(route, presetTitle) {
     uploadDialog.innerHTML =
       '<form class="upload-form" id="upload-form">' +
         '<h2>Add to the repository</h2>' +
@@ -1430,14 +1464,15 @@
           (route ? '' : '<option value="" selected disabled>Choose where it belongs&hellip;</option>') +
           sectionOptionsHTML(route) + '</select></label>' +
         '<label class="dropzone" id="upload-dropzone" data-for="file">' +
-          '<input type="file" name="file" required>' +
+          '<input type="file" name="file" multiple required>' +
           icon(ICON_UPLOAD, 26) +
-          '<span class="dropzone-label">Drop a file here, or click to choose one</span>' +
+          '<span class="dropzone-label">Drop files here, or click to choose</span>' +
           '<span class="dropzone-hint">PDF, Word, Excel, PowerPoint, images, video &mdash; up to 50 MB</span>' +
         '</label>' +
         '<label class="field" data-for="link" hidden><span>Link</span><input type="url" name="url" placeholder="https://www.loom.com/share/&hellip;"></label>' +
         '<p class="field-hint" data-for="link" hidden>Plays or previews right in the site: Loom, YouTube, Vimeo, Google Docs/Slides/Sheets/Drive, published Notion pages, Figma, and PDF links. Anything else opens in a new tab.</p>' +
-        '<label class="field"><span>Title</span><input type="text" name="title" maxlength="200" required placeholder="e.g. 26-10-01 Weekly Team Meeting Minutes"></label>' +
+        '<label class="field" id="title-field"><span>Title</span><input type="text" name="title" maxlength="200" required placeholder="e.g. 26-10-01 Weekly Team Meeting Minutes" value="' + escapeHtml(presetTitle || '') + '"></label>' +
+        '<p class="field-hint" id="multi-hint" hidden>Each file is titled with its file name. To replace a SharePoint document, name the file the same as it appears on the site.</p>' +
         '<p class="form-message" id="upload-message"></p>' +
         '<div class="modal-actions">' +
           '<button type="button" class="btn btn-secondary" data-upload-cancel>Cancel</button>' +
@@ -1457,25 +1492,37 @@
       uploadDialog.querySelectorAll('[data-for]').forEach((el) => { el.hidden = el.getAttribute('data-for') !== mode; });
       form.file.required = mode === 'file';
       form.url.required = mode === 'link';
-      submit.textContent = mode === 'file' ? 'Upload' : 'Add link';
+      const many = mode === 'file' && form.file.files.length > 1;
+      uploadDialog.querySelector('#title-field').hidden = many;
+      uploadDialog.querySelector('#multi-hint').hidden = !many;
+      form.title.required = !many;
+      submit.textContent = mode === 'link' ? 'Add link' : many ? 'Upload ' + form.file.files.length + ' files' : 'Upload';
       message.textContent = '';
       (mode === 'file' ? zone : form.url).focus();
     }));
 
-    function pickFile(file) {
-      if (!file) return;
-      label.textContent = file.name + ' (' + formatSize(file.size) + ')';
+    function titleFromFileName(name) { return name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim(); }
+    // One file: editable title. Several files: each is titled from its file name.
+    function pickFiles(files) {
+      if (!files.length) return;
+      const many = files.length > 1;
+      const total = Array.prototype.reduce.call(files, (n, f) => n + f.size, 0);
+      label.textContent = many ? files.length + ' files selected (' + formatSize(total) + ')' : files[0].name + ' (' + formatSize(files[0].size) + ')';
       zone.classList.add('has-file');
-      if (!form.title.value.trim()) form.title.value = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ');
+      uploadDialog.querySelector('#title-field').hidden = many;
+      uploadDialog.querySelector('#multi-hint').hidden = !many;
+      form.title.required = !many;
+      if (!many && !form.title.value.trim()) form.title.value = titleFromFileName(files[0].name);
+      submit.textContent = many ? 'Upload ' + files.length + ' files' : 'Upload';
     }
-    form.file.addEventListener('change', () => pickFile(form.file.files[0]));
+    form.file.addEventListener('change', () => pickFiles(form.file.files));
     ['dragenter', 'dragover'].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.add('dragging'); }));
     ['dragleave', 'drop'].forEach((t) => zone.addEventListener(t, () => zone.classList.remove('dragging')));
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
       if (!e.dataTransfer.files.length) return;
       form.file.files = e.dataTransfer.files;
-      pickFile(form.file.files[0]);
+      pickFiles(form.file.files);
     });
     // Suggest a title as soon as a link is pasted, but never overwrite one the member typed.
     let suggestedTitle = '';
@@ -1506,30 +1553,34 @@
         message.textContent = 'Saving…';
         error = (await db.from('documents').insert(Object.assign({ section, title, url: u.href }, owner))).error;
       } else {
-        const file = form.file.files[0];
-        if (!file) { message.textContent = 'Choose a file to upload.'; return; }
-        if (file.size > MAX_UPLOAD_BYTES) { message.textContent = 'That file is over 50 MB.'; return; }
-        const safeName = file.name.replace(/[^\w.\-]+/g, '_');
-        const path = CURRENT_USER.id + '/' + crypto.randomUUID() + '/' + safeName;
+        const files = Array.prototype.slice.call(form.file.files);
+        if (!files.length) { message.textContent = 'Choose a file to upload.'; return; }
+        const tooBig = files.filter((f) => f.size > MAX_UPLOAD_BYTES);
+        if (tooBig.length) { message.textContent = 'Over 50 MB: ' + tooBig.map((f) => f.name).join(', '); return; }
         setDisabled(true);
-        message.textContent = 'Uploading…';
-        error = (await db.storage.from('documents').upload(path, file, { contentType: file.type || 'application/octet-stream' })).error;
-        if (!error) {
-          error = (await db.from('documents').insert(Object.assign({
-            section, title, file_path: path, file_name: file.name,
-            mime_type: file.type || null, size_bytes: file.size,
-          }, owner))).error;
-          if (error) await db.storage.from('documents').remove([path]);
+        const failed = [];
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          message.textContent = files.length > 1 ? 'Uploading ' + (i + 1) + ' of ' + files.length + '\u2026' : 'Uploading\u2026';
+          const fileError = await uploadOne(file, section, files.length > 1 ? titleFromFileName(file.name) : title, owner);
+          if (fileError) failed.push(file.name + ' (' + fileError.message + ')');
+        }
+        if (failed.length) {
+          await loadUploads();
+          setDisabled(false);
+          message.textContent = 'Couldn\u2019t upload: ' + failed.join('; ');
+          return;
         }
       }
       if (error) {
         setDisabled(false);
-        message.textContent = (mode === 'link' ? 'Couldn’t add the link: ' : 'Upload failed: ') + error.message;
+        message.textContent = 'Couldn\u2019t add the link: ' + error.message;
         return;
       }
       uploadDialog.close();
       await loadUploads();
-      if (location.hash.slice(1) === section) render();
+      const here = location.hash.slice(1);
+      if (here === section || here.indexOf(DOC_PREFIX) === 0) render();
       else location.hash = section;
     });
 
@@ -1538,7 +1589,7 @@
 
   document.addEventListener('click', (e) => {
     const up = e.target.closest('[data-upload]');
-    if (up) { e.preventDefault(); openUploadDialog(up.getAttribute('data-upload')); return; }
+    if (up) { e.preventDefault(); openUploadDialog(up.getAttribute('data-upload'), up.getAttribute('data-upload-title')); return; }
     const del = e.target.closest('[data-doc-delete]');
     if (del) { e.preventDefault(); deleteUpload(del.getAttribute('data-doc-delete')); return; }
     const dl = e.target.closest('[data-doc-download]');
@@ -1710,8 +1761,9 @@
   function render() {
     const route = currentRoute();
     let html;
-    const viewId = route.indexOf(VIEW_PREFIX) === 0 ? route.slice(VIEW_PREFIX.length) : null;
     const spDoc = route.indexOf(DOC_PREFIX) === 0 ? SHAREPOINT_DOCS[route.slice(DOC_PREFIX.length)] : null;
+    const spCopy = spDoc && uploadedCopyOf(spDoc);
+    const viewId = route.indexOf(VIEW_PREFIX) === 0 ? route.slice(VIEW_PREFIX.length) : spCopy ? spCopy.id : null;
     if (viewId) html = viewerHTML(viewId);
     else if (spDoc) html = sharePointViewerHTML(spDoc);
     else if (route === 'home') html = homeHTML();
