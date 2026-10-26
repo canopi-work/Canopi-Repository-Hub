@@ -3,7 +3,14 @@
 The site stays a static site (GitHub Pages, or any static host). Supabase adds:
 
 - **Logins.** The whole site sits behind a sign-in screen. Accounts are invite-only.
-- **Uploads.** Every document page has an **Upload a document** button, and the sidebar has an **Upload** button that lets you pick the section. Uploaded files show under "Uploaded by the team" on that page, in Home > Recent updates, and in search.
+- **Uploads and links.** Every document page has an **Add a file or link** button, and the sidebar has one that lets you pick the section. Members can upload a file or paste a link. Items show under "Added by the team" on that page, in Home > Recent updates, and in search.
+- **Viewer.** Clicking an item opens it inside the site:
+  - Loom, YouTube and Vimeo videos play inline.
+  - Google Docs, Slides, Sheets and Drive files, Figma files, and PDF links show a preview.
+  - Notion pages show inline only if they're published to the web (Share > Publish); otherwise there's an Open in Notion button.
+  - Uploaded PDFs, images, video and audio display inline.
+  - Uploaded Word, Excel and PowerPoint files preview through Microsoft's free Office web viewer, which is given a link to the file that expires after an hour.
+  - Anything else gets Open or Download buttons.
 - **Private files.** Uploads go to a private storage bucket. Only signed-in members can download them, through links that expire after 60 seconds. Members can delete their own uploads; admins can delete any.
 
 Supabase itself can't host the site's pages (its storage serves `.html` as plain text), so the pages stay on GitHub Pages.
@@ -18,6 +25,10 @@ Supabase itself can't host the site's pages (its storage serves `.html` as plain
    - Redirect URLs: add the same address.
 5. **Set up email sending.** Supabase's built-in email only sends to members of your Supabase team, and only a few emails per hour, so invites to regular staff won't arrive. Go to Authentication > Emails > SMTP Settings and enter your mail provider's SMTP details (for example Microsoft 365, Google Workspace, Resend, or SendGrid).
 6. **Connect the site.** Go to Project Settings > API. Copy the **Project URL** and the **anon public** key into [`config.js`](config.js), then commit. The anon key is meant to be public; the database rules in `schema.sql` decide what people can do.
+
+## Updating the database after a site update
+
+If a site update changes `supabase/schema.sql`, open SQL Editor > New query, paste in the whole file again, and click Run. It's safe to re-run; existing documents are kept.
 
 ## Adding members
 

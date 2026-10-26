@@ -23,19 +23,29 @@ as $$
 $$;
 
 -- ---------- documents ----------
--- One row per uploaded file. `section` is the site route the file belongs to
--- (e.g. 'meetings-team-weekly'), so each page can list its own uploads.
+-- One row per uploaded file or shared link. `section` is the site route it
+-- belongs to (e.g. 'meetings-team-weekly'), so each page can list its own items.
+-- Files have file_path/file_name; links (Loom, YouTube, Notion, ...) have url.
 create table if not exists public.documents (
   id uuid primary key default gen_random_uuid(),
   section text not null,
   title text not null check (char_length(title) between 1 and 200),
-  file_path text not null unique,
-  file_name text not null,
+  file_path text unique,
+  file_name text,
   mime_type text,
   size_bytes bigint,
   uploaded_by uuid default auth.uid() references auth.users (id) on delete set null,
   uploader_email text default (auth.jwt() ->> 'email'),
   created_at timestamptz not null default now()
+);
+-- Links were added after the first version; these bring older projects up to date.
+alter table public.documents add column if not exists url text;
+alter table public.documents alter column file_path drop not null;
+alter table public.documents alter column file_name drop not null;
+alter table public.documents drop constraint if exists documents_file_or_link;
+alter table public.documents add constraint documents_file_or_link check (
+  (file_path is not null and file_name is not null and url is null)
+  or (file_path is null and url ~* '^https?://' and char_length(url) <= 2000)
 );
 create index if not exists documents_section_created_idx on public.documents (section, created_at desc);
 alter table public.documents enable row level security;
@@ -51,7 +61,7 @@ create policy "Members can add their own documents" on public.documents
   with check (
     uploaded_by = auth.uid()
     and uploader_email is not distinct from (auth.jwt() ->> 'email')
-    and split_part(file_path, '/', 1) = auth.uid()::text
+    and (file_path is null or split_part(file_path, '/', 1) = auth.uid()::text)
   );
 
 drop policy if exists "Owners and admins can delete documents" on public.documents;

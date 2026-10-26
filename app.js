@@ -158,6 +158,7 @@
   const ICON_CALENDAR = 'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z';
   const ICON_FOLDER_OPEN = 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9';
   const ICON_UPLOAD = 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12';
+  const ICON_LINK = 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71';
   const ICONS = {
     'Active Projects': 'M22 12h-4l-3 9L9 3l-3 9H2',
     'Completed Projects': 'M21.801 10A10 10 0 1 1 17 3.335 M9 11l3 3L22 4',
@@ -282,11 +283,11 @@
   // and those notes must stay private to the two people involved.
   const CONTRIBUTE_FORM_URL = 'https://forms.cloud.microsoft/r/8cPduYGSqV';
   function uploadButtonHTML(route, label) {
-    return '<button type="button" class="btn btn-primary" data-upload="' + (route || '') + '">' + icon(ICON_UPLOAD, 16) + (label || 'Upload a document') + '</button>';
+    return '<button type="button" class="btn btn-primary" data-upload="' + (route || '') + '">' + icon(ICON_UPLOAD, 16) + (label || 'Add a file or link') + '</button>';
   }
   function emptyStateHTML(crumbItems, title, uploadRoute) {
     const body = uploadRoute
-      ? 'Nothing has been added here yet. If you have a document for this section, upload it and it&rsquo;ll show up here for the whole team.'
+      ? 'Nothing has been added here yet. Upload a document or add a link (Loom, YouTube, Notion, Google Docs&hellip;) and it&rsquo;ll show up here for the whole team.'
       : 'Nothing has been added here yet. If you have a document for this section, contribute it and it&rsquo;ll get added.';
     const action = uploadRoute
       ? uploadButtonHTML(uploadRoute)
@@ -1145,20 +1146,25 @@
       : emptyStateHTML(p.crumb, p.title, p.route);
   });
 
-  // ---------- member uploads (Supabase) ----------
-  // Files live in the private "documents" storage bucket; each one has a row in
-  // the documents table saying which page (route) it belongs to. Any doc-list
-  // page and any empty page accepts uploads, except the private 1:1 pages.
+  // ---------- member uploads and links (Supabase) ----------
+  // Files live in the private "documents" storage bucket; links (Loom, YouTube,
+  // Notion, ...) are just a URL. Each one has a row in the documents table saying
+  // which page (route) it belongs to, and opens in the viewer at #view-<id>.
+  // Any doc-list page and any empty page accepts them, except the private 1:1 pages.
   const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // matches the bucket limit in supabase/schema.sql
+  const VIEW_PREFIX = 'view-';
   const UPLOAD_ROUTES = Object.keys(DOC_LISTS).concat(Object.keys(UPLOAD_ONLY_PAGES)).filter((r) => !isPrivateRoute(r));
   const SECTION_PREFIXES = { kb: 'Knowledge Base', projects: 'Projects', meetings: 'Meetings', resources: 'Resources', team: 'Team Spaces' };
+  const SECTION_ROOTS = { 'Knowledge Base': 'kb', Projects: 'projects', Meetings: 'meetings', Resources: 'resources', 'Team Spaces': 'team-spaces' };
   let UPLOADS = [];
   let CURRENT_USER = null;
   let IS_ADMIN = false;
 
   function sectionGroup(route) { return SECTION_PREFIXES[route.split('-')[0]] || 'Other'; }
-  function sectionPath(route) { return sectionGroup(route) + ' \u203a ' + (TITLES[route] || route); }
+  function sectionPath(route) { return sectionGroup(route) + ' › ' + (TITLES[route] || route); }
   function uploadsFor(route) { return UPLOADS.filter((d) => d.section === route); }
+  function findUpload(id) { return UPLOADS.find((u) => u.id === id); }
+  function canDelete(d) { return IS_ADMIN || (CURRENT_USER && d.uploaded_by === CURRENT_USER.id); }
 
   async function loadUploads() {
     const { data, error } = await db.from('documents').select('*').order('created_at', { ascending: false });
@@ -1179,43 +1185,162 @@
   }
   function uploaderName(d) { return d.uploader_email ? d.uploader_email.split('@')[0] : 'a member'; }
 
+  // ---------- what a link or file looks like in the viewer ----------
+  function parseUrl(s) {
+    try { const u = new URL(s); return /^https?:$/.test(u.protocol) ? u : null; } catch (e) { return null; }
+  }
+  // Known sites get an embeddable player/preview URL; anything else is opened in a new tab.
+  function linkEmbed(urlString) {
+    const u = parseUrl(urlString);
+    if (!u) return null;
+    const host = u.hostname.replace(/^www\./, '');
+    const parts = u.pathname.split('/').filter(Boolean);
+    let m;
+    if (host === 'youtu.be' && parts[0]) return { provider: 'YouTube', type: 'Video', src: 'https://www.youtube-nocookie.com/embed/' + parts[0], video: true };
+    if (/(^|\.)youtube\.com$/.test(host)) {
+      const id = u.searchParams.get('v') || (['shorts', 'embed', 'live'].indexOf(parts[0]) !== -1 ? parts[1] : null);
+      return id ? { provider: 'YouTube', type: 'Video', src: 'https://www.youtube-nocookie.com/embed/' + id, video: true } : { provider: 'YouTube', type: 'Link' };
+    }
+    if (/(^|\.)loom\.com$/.test(host)) {
+      return (parts[0] === 'share' || parts[0] === 'embed') && parts[1]
+        ? { provider: 'Loom', type: 'Video', src: 'https://www.loom.com/embed/' + parts[1], video: true }
+        : { provider: 'Loom', type: 'Link' };
+    }
+    if (host === 'vimeo.com' && /^\d+$/.test(parts[0] || '')) {
+      return { provider: 'Vimeo', type: 'Video', src: 'https://player.vimeo.com/video/' + parts[0] + (parts[1] ? '?h=' + encodeURIComponent(parts[1]) : ''), video: true };
+    }
+    if (host === 'docs.google.com' && (m = u.pathname.match(/^\/(document|presentation|spreadsheets)\/d\/([\w-]+)/))) {
+      const names = { document: 'Google Doc', presentation: 'Google Slides', spreadsheets: 'Google Sheet' };
+      return { provider: 'Google', type: names[m[1]], src: 'https://docs.google.com/' + m[1] + '/d/' + m[2] + '/preview' };
+    }
+    if (host === 'drive.google.com' && (m = u.pathname.match(/^\/file\/d\/([\w-]+)/))) {
+      return { provider: 'Google Drive', type: 'File', src: 'https://drive.google.com/file/d/' + m[1] + '/preview' };
+    }
+    if (/(^|\.)notion\.(site|so)$/.test(host)) {
+      return { provider: 'Notion', type: 'Notion', src: u.href, note: 'Only Notion pages that are published to the web (Share › Publish) show here. Otherwise use Open in Notion.' };
+    }
+    if (/(^|\.)figma\.com$/.test(host) && /^(file|design|proto|board)$/.test(parts[0] || '')) {
+      return { provider: 'Figma', type: 'Figma', src: 'https://www.figma.com/embed?embed_host=canopi&url=' + encodeURIComponent(u.href) };
+    }
+    if (/\.pdf$/i.test(u.pathname)) return { provider: host, type: 'PDF', src: u.href };
+    return { provider: host, type: 'Link' };
+  }
+  function fileKind(d) {
+    const name = (d.file_name || '').toLowerCase();
+    const mime = d.mime_type || '';
+    if (mime === 'application/pdf' || /\.pdf$/.test(name)) return 'PDF';
+    if (/^image\//.test(mime)) return 'Image';
+    if (/^video\//.test(mime)) return 'Video';
+    if (/^audio\//.test(mime)) return 'Audio';
+    if (/\.(docx?|rtf)$/.test(name)) return 'Word';
+    if (/\.(xlsx?|csv)$/.test(name)) return 'Excel';
+    if (/\.(pptx?)$/.test(name)) return 'PowerPoint';
+    return 'File';
+  }
+  function itemType(d) { return d.url ? (linkEmbed(d.url) || { type: 'Link' }).type : fileKind(d); }
+
   function uploadRowHTML(d) {
-    const canDelete = IS_ADMIN || (CURRENT_USER && d.uploaded_by === CURRENT_USER.id);
     return '<div class="doclist-row upload-row">' +
-      '<a href="#" data-doc="' + d.id + '"><span>' + escapeHtml(d.title) + '</span></a>' +
-      '<span class="upload-meta">' + escapeHtml(uploaderName(d)) + ' &middot; ' + formatDate(d.created_at) +
+      '<a href="#' + VIEW_PREFIX + d.id + '"><span>' + escapeHtml(d.title) + '</span></a>' +
+      '<span class="upload-meta"><span class="tag tag-outline">' + escapeHtml(itemType(d)) + '</span>' +
+        escapeHtml(uploaderName(d)) + ' &middot; ' + formatDate(d.created_at) +
         (d.size_bytes ? ' &middot; ' + formatSize(d.size_bytes) : '') +
-        (canDelete ? '<button type="button" class="link-button upload-delete" data-doc-delete="' + d.id + '">Delete</button>' : '') +
+        (canDelete(d) ? '<button type="button" class="link-button upload-delete" data-doc-delete="' + d.id + '">Delete</button>' : '') +
       '</span></div>';
   }
   function uploadsSectionHTML(route, standalone) {
     const docs = uploadsFor(route);
     const list = docs.length
       ? '<div class="doclist">' + docs.map(uploadRowHTML).join('') + '</div>'
-      : '<p class="section-lead">Nothing uploaded here yet.</p>';
-    return (standalone ? '' : '<h2>Uploaded by the team</h2>') + list +
+      : '<p class="section-lead">Nothing added here yet.</p>';
+    return (standalone ? '' : '<h2>Added by the team</h2>') + list +
       '<div class="upload-actions">' + uploadButtonHTML(route) + '</div>';
   }
 
+  // ---------- viewer page (#view-<id>) ----------
+  function frameHTML(src, video) {
+    return '<div class="viewer-frame' + (video ? ' viewer-video' : '') + '"><iframe src="' + escapeHtml(src) + '"' +
+      ' allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" allowfullscreen' +
+      ' referrerpolicy="strict-origin-when-cross-origin"></iframe></div>';
+  }
+  function noPreviewHTML(text) {
+    return '<div class="empty-state viewer-empty"><span class="empty-state-icon">' + icon(ICON_DEFAULT, 30) + '</span>' +
+      '<p class="empty-state-body">' + text + '</p></div>';
+  }
+
+  function viewerHTML(id) {
+    const d = findUpload(id);
+    if (!d) {
+      return crumb([{ label: 'Home', route: 'home' }, { label: 'Not found' }]) + '<h1>Not found</h1>' +
+        '<p class="section-lead">This item doesn&rsquo;t exist anymore, or it was deleted.</p>';
+    }
+    const group = sectionGroup(d.section);
+    const embed = d.url ? linkEmbed(d.url) : null;
+    const actions = d.url
+      ? '<a class="btn btn-primary" href="' + escapeHtml(d.url) + '" target="_blank" rel="noopener">Open in ' + escapeHtml(embed.provider) + ' &#8599;</a>'
+      : '<button type="button" class="btn btn-primary" data-doc-download="' + d.id + '">Download</button>';
+    return crumb([
+      { label: 'Home', route: 'home' },
+      { label: group, route: SECTION_ROOTS[group] },
+      { label: escapeHtml(TITLES[d.section] || d.section), route: d.section },
+      { label: escapeHtml(d.title) },
+    ]) +
+      '<h1>' + escapeHtml(d.title) + '</h1>' +
+      '<p class="detail-meta"><span class="tag tag-outline">' + escapeHtml(itemType(d)) + '</span> Added by ' + escapeHtml(uploaderName(d)) + ' on ' + formatDate(d.created_at) +
+        (d.size_bytes ? ' &middot; ' + formatSize(d.size_bytes) : '') + '</p>' +
+      '<div class="viewer-actions">' + actions +
+        (canDelete(d) ? '<button type="button" class="btn btn-secondary" data-doc-delete="' + d.id + '">Delete</button>' : '') +
+      '</div>' +
+      '<div id="viewer">' + (d.url
+        ? (embed.src ? frameHTML(embed.src, embed.video) + (embed.note ? '<p class="viewer-note">' + embed.note + '</p>' : '')
+                     : noPreviewHTML('This link can&rsquo;t be previewed inside the site. Use the button above to open it.'))
+        : '<p class="section-lead">Loading preview&hellip;</p>') +
+      '</div>';
+  }
+
+  // Uploaded files need a signed link before they can be shown; fill the preview in once we have it.
+  async function fillFilePreview(id) {
+    const d = findUpload(id);
+    const el = document.getElementById('viewer');
+    if (!d || d.url || !el) return;
+    const kind = fileKind(d);
+    const office = ['Word', 'Excel', 'PowerPoint'].indexOf(kind) !== -1;
+    if (['PDF', 'Image', 'Video', 'Audio'].indexOf(kind) === -1 && !office) {
+      el.innerHTML = noPreviewHTML('There&rsquo;s no preview for this file type. Use Download to open it.');
+      return;
+    }
+    const { data, error } = await db.storage.from('documents').createSignedUrl(d.file_path, 60 * 60);
+    if (!document.getElementById('viewer')) return; // navigated away meanwhile
+    if (error) { el.innerHTML = noPreviewHTML('Couldn&rsquo;t load the preview: ' + escapeHtml(error.message)); return; }
+    const src = data.signedUrl;
+    if (kind === 'PDF') el.innerHTML = frameHTML(src);
+    else if (kind === 'Image') el.innerHTML = '<img class="viewer-image" src="' + escapeHtml(src) + '" alt="' + escapeHtml(d.title) + '">';
+    else if (kind === 'Video') el.innerHTML = '<video class="viewer-media" src="' + escapeHtml(src) + '" controls></video>';
+    else if (kind === 'Audio') el.innerHTML = '<audio class="viewer-media" src="' + escapeHtml(src) + '" controls></audio>';
+    // Word/Excel/PowerPoint: Microsoft's free web viewer, fed a link that expires in an hour.
+    else el.innerHTML = frameHTML('https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(src));
+  }
+
   async function downloadUpload(id) {
-    const d = UPLOADS.find((u) => u.id === id);
-    if (!d) return;
+    const d = findUpload(id);
+    if (!d || !d.file_path) return;
     const { data, error } = await db.storage.from('documents').createSignedUrl(d.file_path, 60, { download: d.file_name });
-    if (error) { alert('Could not open that file: ' + error.message); return; }
+    if (error) { alert('Could not download that file: ' + error.message); return; }
     location.assign(data.signedUrl);
   }
 
   async function deleteUpload(id) {
-    const d = UPLOADS.find((u) => u.id === id);
-    if (!d || !confirm('Delete \u201c' + d.title + '\u201d? This can\u2019t be undone.')) return;
+    const d = findUpload(id);
+    if (!d || !confirm('Delete “' + d.title + '”? This can’t be undone.')) return;
     const { error } = await db.from('documents').delete().eq('id', id);
     if (error) { alert('Could not delete: ' + error.message); return; }
-    await db.storage.from('documents').remove([d.file_path]);
+    if (d.file_path) await db.storage.from('documents').remove([d.file_path]);
     await loadUploads();
-    render();
+    if (location.hash.slice(1) === VIEW_PREFIX + id) location.hash = d.section;
+    else render();
   }
 
-  // ---------- upload dialog ----------
+  // ---------- add dialog: upload a file or add a link ----------
   const uploadDialog = document.createElement('dialog');
   uploadDialog.className = 'modal';
   document.body.appendChild(uploadDialog);
@@ -1234,27 +1359,46 @@
   function openUploadDialog(route) {
     uploadDialog.innerHTML =
       '<form class="upload-form" id="upload-form">' +
-        '<h2>Upload a document</h2>' +
+        '<h2>Add to the repository</h2>' +
+        '<div class="segmented" role="tablist">' +
+          '<button type="button" role="tab" class="active" data-mode="file">' + icon(ICON_UPLOAD, 15) + 'Upload a file</button>' +
+          '<button type="button" role="tab" data-mode="link">' + icon(ICON_LINK, 15) + 'Add a link</button>' +
+        '</div>' +
         '<label class="field"><span>Section</span><select name="section" required>' +
           (route ? '' : '<option value="" selected disabled>Choose where it belongs&hellip;</option>') +
           sectionOptionsHTML(route) + '</select></label>' +
-        '<label class="dropzone" id="upload-dropzone">' +
+        '<label class="dropzone" id="upload-dropzone" data-for="file">' +
           '<input type="file" name="file" required>' +
           icon(ICON_UPLOAD, 26) +
           '<span class="dropzone-label">Drop a file here, or click to choose one</span>' +
-          '<span class="dropzone-hint">PDF, Word, Excel, PowerPoint, images &mdash; up to 50 MB</span>' +
+          '<span class="dropzone-hint">PDF, Word, Excel, PowerPoint, images, video &mdash; up to 50 MB</span>' +
         '</label>' +
+        '<label class="field" data-for="link" hidden><span>Link</span><input type="url" name="url" placeholder="https://www.loom.com/share/&hellip;"></label>' +
+        '<p class="field-hint" data-for="link" hidden>Plays or previews right in the site: Loom, YouTube, Vimeo, Google Docs/Slides/Sheets/Drive, published Notion pages, Figma, and PDF links. Anything else opens in a new tab.</p>' +
         '<label class="field"><span>Title</span><input type="text" name="title" maxlength="200" required placeholder="e.g. 26-10-01 Weekly Team Meeting Minutes"></label>' +
         '<p class="form-message" id="upload-message"></p>' +
         '<div class="modal-actions">' +
           '<button type="button" class="btn btn-secondary" data-upload-cancel>Cancel</button>' +
-          '<button type="submit" class="btn btn-primary">Upload</button>' +
+          '<button type="submit" class="btn btn-primary" id="upload-submit">Upload</button>' +
         '</div>' +
       '</form>';
     const form = uploadDialog.querySelector('form');
     const zone = uploadDialog.querySelector('#upload-dropzone');
     const label = zone.querySelector('.dropzone-label');
     const message = uploadDialog.querySelector('#upload-message');
+    const submit = uploadDialog.querySelector('#upload-submit');
+    let mode = 'file';
+
+    uploadDialog.querySelectorAll('[data-mode]').forEach((tab) => tab.addEventListener('click', () => {
+      mode = tab.getAttribute('data-mode');
+      uploadDialog.querySelectorAll('[data-mode]').forEach((t) => t.classList.toggle('active', t === tab));
+      uploadDialog.querySelectorAll('[data-for]').forEach((el) => { el.hidden = el.getAttribute('data-for') !== mode; });
+      form.file.required = mode === 'file';
+      form.url.required = mode === 'link';
+      submit.textContent = mode === 'file' ? 'Upload' : 'Add link';
+      message.textContent = '';
+      (mode === 'file' ? zone : form.url).focus();
+    }));
 
     function pickFile(file) {
       if (!file) return;
@@ -1271,34 +1415,49 @@
       form.file.files = e.dataTransfer.files;
       pickFile(form.file.files[0]);
     });
+    form.url.addEventListener('change', () => {
+      const embed = linkEmbed(form.url.value.trim());
+      if (embed && !form.title.value.trim()) form.title.value = embed.provider + ' ' + embed.type.toLowerCase();
+    });
     uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+
+    function setDisabled(disabled) {
+      form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = disabled; });
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const file = form.file.files[0];
-      if (!file) { message.textContent = 'Choose a file to upload.'; return; }
-      if (file.size > MAX_UPLOAD_BYTES) { message.textContent = 'That file is over 50 MB.'; return; }
       const section = form.section.value;
       const title = form.title.value.trim();
-      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
-      const path = CURRENT_USER.id + '/' + crypto.randomUUID() + '/' + safeName;
+      const owner = { uploaded_by: CURRENT_USER.id, uploader_email: CURRENT_USER.email };
+      let error;
 
-      form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = true; });
-      message.textContent = 'Uploading\u2026';
-      const up = await db.storage.from('documents').upload(path, file, { contentType: file.type || 'application/octet-stream' });
-      let error = up.error;
-      if (!error) {
-        const ins = await db.from('documents').insert({
-          section, title, file_path: path, file_name: file.name,
-          mime_type: file.type || null, size_bytes: file.size,
-          uploaded_by: CURRENT_USER.id, uploader_email: CURRENT_USER.email,
-        });
-        error = ins.error;
-        if (error) await db.storage.from('documents').remove([path]);
+      if (mode === 'link') {
+        const u = parseUrl(form.url.value.trim());
+        if (!u) { message.textContent = 'Enter a full link starting with https://'; return; }
+        setDisabled(true);
+        message.textContent = 'Saving…';
+        error = (await db.from('documents').insert(Object.assign({ section, title, url: u.href }, owner))).error;
+      } else {
+        const file = form.file.files[0];
+        if (!file) { message.textContent = 'Choose a file to upload.'; return; }
+        if (file.size > MAX_UPLOAD_BYTES) { message.textContent = 'That file is over 50 MB.'; return; }
+        const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+        const path = CURRENT_USER.id + '/' + crypto.randomUUID() + '/' + safeName;
+        setDisabled(true);
+        message.textContent = 'Uploading…';
+        error = (await db.storage.from('documents').upload(path, file, { contentType: file.type || 'application/octet-stream' })).error;
+        if (!error) {
+          error = (await db.from('documents').insert(Object.assign({
+            section, title, file_path: path, file_name: file.name,
+            mime_type: file.type || null, size_bytes: file.size,
+          }, owner))).error;
+          if (error) await db.storage.from('documents').remove([path]);
+        }
       }
       if (error) {
-        form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
-        message.textContent = 'Upload failed: ' + error.message;
+        setDisabled(false);
+        message.textContent = (mode === 'link' ? 'Couldn’t add the link: ' : 'Upload failed: ') + error.message;
         return;
       }
       uploadDialog.close();
@@ -1315,13 +1474,13 @@
     if (up) { e.preventDefault(); openUploadDialog(up.getAttribute('data-upload')); return; }
     const del = e.target.closest('[data-doc-delete]');
     if (del) { e.preventDefault(); deleteUpload(del.getAttribute('data-doc-delete')); return; }
-    const doc = e.target.closest('[data-doc]');
-    if (doc) { e.preventDefault(); downloadUpload(doc.getAttribute('data-doc')); }
+    const dl = e.target.closest('[data-doc-download]');
+    if (dl) { e.preventDefault(); downloadUpload(dl.getAttribute('data-doc-download')); }
   });
 
   function renderAccount() {
     document.getElementById('sidebar-account').innerHTML =
-      uploadButtonHTML('', 'Upload') +
+      uploadButtonHTML('', 'Add file or link') +
       '<div class="sidebar-user" title="' + escapeHtml(CURRENT_USER.email) + '">' + escapeHtml(CURRENT_USER.email) + '</div>' +
       '<button type="button" class="link-button sidebar-signout" id="sign-out">Sign out</button>';
     document.getElementById('sign-out').addEventListener('click', () => window.CanopiAuth.signOut());
@@ -1347,7 +1506,7 @@
   function homeHTML() {
     // Latest member uploads first; the hand-picked list fills in until there are some.
     const recentUploads = UPLOADS.slice(0, 5).map((d) => ({
-      title: escapeHtml(d.title), meta: formatDate(d.created_at), route: d.section,
+      title: escapeHtml(d.title), meta: formatDate(d.created_at), route: VIEW_PREFIX + d.id,
     }));
     const recentUpdates = recentUploads.length ? recentUploads : [
       { title: "Stakeholder's Records", meta: 'Today', route: 'projects-documentation-raci' },
@@ -1408,10 +1567,14 @@
 
   function currentRoute() {
     const r = (location.hash || '#home').slice(1);
-    return TITLES[r] !== undefined || r === 'home' ? r : 'home';
+    return TITLES[r] !== undefined || r === 'home' || r.indexOf(VIEW_PREFIX) === 0 ? r : 'home';
   }
 
   function setActiveNav(route) {
+    if (route.indexOf(VIEW_PREFIX) === 0) {
+      const d = findUpload(route.slice(VIEW_PREFIX.length));
+      route = d ? d.section : 'home';
+    }
     navEl.querySelectorAll('a').forEach((a) => {
       const key = a.getAttribute('data-nav-key');
       const active = key === 'home' ? route === 'home' : (route === key || route.indexOf(key + '-') === 0);
@@ -1422,7 +1585,9 @@
   function render() {
     const route = currentRoute();
     let html;
-    if (route === 'home') html = homeHTML();
+    const viewId = route.indexOf(VIEW_PREFIX) === 0 ? route.slice(VIEW_PREFIX.length) : null;
+    if (viewId) html = viewerHTML(viewId);
+    else if (route === 'home') html = homeHTML();
     else if (SECTION_INDEXES[route]) html = SECTION_INDEXES[route]();
     else if (DOC_LISTS[route]) html = DOC_LISTS[route]() + (UPLOAD_ROUTES.indexOf(route) !== -1 ? uploadsSectionHTML(route) : '');
     else if (UPLOAD_ONLY_PAGES[route]) html = UPLOAD_ONLY_PAGES[route]();
@@ -1430,11 +1595,13 @@
     else html = homeHTML();
 
     contentEl.innerHTML = html;
-    document.title = route === 'home' ? 'Canopi Repository' : (TITLES[route] || 'Canopi Repository') + ' \u2014 Canopi Repository';
+    const viewed = viewId && findUpload(viewId);
+    document.title = route === 'home' ? 'Canopi Repository' : (viewed ? viewed.title : TITLES[route] || 'Canopi Repository') + ' \u2014 Canopi Repository';
     setActiveNav(route);
     window.scrollTo(0, 0);
     recordRecentlyViewed(route);
     wireSearch();
+    if (viewId) fillFilePreview(viewId);
   }
 
   function searchResultHTML(item) {
@@ -1442,7 +1609,6 @@
     const inner = '<span class="search-result-title">' + item.title + '</span>' +
       (meta ? '<span class="search-result-meta">' + meta + '</span>' : '');
     if (item.comingSoon) return '<span class="search-result-row search-result-disabled">' + inner + '</span>';
-    if (item.docId) return '<a href="#" data-doc="' + item.docId + '" class="search-result-row">' + inner + '</a>';
     if (item.route) return '<a href="#' + item.route + '" class="search-result-row">' + inner + '</a>';
     if (item.download) return '<a href="' + item.href + '" download class="search-result-row">' + inner + '</a>';
     return '<a href="' + item.href + '" target="_blank" rel="noopener" class="search-result-row">' + inner + '</a>';
@@ -1455,7 +1621,7 @@
     input.addEventListener('input', () => {
       const q = input.value.trim().toLowerCase();
       if (!q) { resultsEl.innerHTML = ''; return; }
-      const uploaded = UPLOADS.map((d) => ({ title: escapeHtml(d.title), meta: sectionPath(d.section), download: true, docId: d.id }));
+      const uploaded = UPLOADS.map((d) => ({ title: escapeHtml(d.title), meta: sectionPath(d.section) + ' \u203a ' + itemType(d), route: VIEW_PREFIX + d.id }));
       const matches = SEARCH_INDEX.concat(uploaded).filter((i) => (i.title + ' ' + (i.keywords || '') + ' ' + (i.meta || '')).toLowerCase().indexOf(q) !== -1).slice(0, 20);
       if (!matches.length) {
         resultsEl.innerHTML = '<div class="search-results"><div class="search-empty">No matches</div></div>';
