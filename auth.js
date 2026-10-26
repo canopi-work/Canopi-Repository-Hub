@@ -39,6 +39,14 @@
     readyCallbacks.forEach((cb) => cb(session));
   }
 
+  // Accounts created with a shared temporary password carry
+  // user_metadata.must_change_password, so the first sign-in asks for a new one.
+  function enter(session) {
+    const meta = session.user.user_metadata || {};
+    if (meta.must_change_password) showSetPassword(session, true);
+    else startApp(session);
+  }
+
   function showScreen(html) {
     shellEl.hidden = true;
     screenEl.hidden = false;
@@ -83,7 +91,7 @@
       const { data, error } = await client.auth.signInWithPassword({ email, password });
       setBusy(form, false);
       if (error) { setMessage(error.message === 'Invalid login credentials' ? 'That email and password don’t match.' : error.message, true); return; }
-      startApp(data.session);
+      enter(data.session);
     });
 
     form.addEventListener('click', async (e) => {
@@ -119,7 +127,7 @@
       e.preventDefault();
       if (form.password.value !== form.confirm.value) { setMessage('The two passwords don’t match.', true); return; }
       setBusy(form, true);
-      const { error } = await client.auth.updateUser({ password: form.password.value });
+      const { error } = await client.auth.updateUser({ password: form.password.value, data: { must_change_password: false } });
       setBusy(form, false);
       if (error) { setMessage(error.message, true); return; }
       startApp(session);
@@ -136,7 +144,7 @@
     if (linkError && !session) showSignIn('That link has expired or was already used. Request a new one below.', true);
     else if (!session) showSignIn();
     else if (linkType === 'invite' || linkType === 'recovery') showSetPassword(session, linkType === 'invite');
-    else startApp(session);
+    else enter(session);
   });
 
   window.CanopiAuth = {

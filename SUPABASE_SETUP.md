@@ -39,6 +39,8 @@ The site starts in **no-email mode** (`emailEnabled: false` in `config.js`): an 
 3. Send them the site link, their email and the temporary password privately, for example in a Teams direct message.
 4. They sign in and click **Change password** in the sidebar to choose their own.
 
+To make the site *require* a new password at first sign-in (useful when several people share one temporary password), give the account the user metadata `{"must_change_password": true}`. Accounts created by SQL can set this in `raw_user_meta_data`.
+
 **Resetting a forgotten password:** run this in the SQL Editor with their email and a new temporary password, then send it to them:
 
 ```sql
