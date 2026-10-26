@@ -1482,8 +1482,44 @@
     document.getElementById('sidebar-account').innerHTML =
       uploadButtonHTML('', 'Add file or link') +
       '<div class="sidebar-user" title="' + escapeHtml(CURRENT_USER.email) + '">' + escapeHtml(CURRENT_USER.email) + '</div>' +
+      '<button type="button" class="link-button sidebar-signout" id="change-password">Change password</button>' +
       '<button type="button" class="link-button sidebar-signout" id="sign-out">Sign out</button>';
+    document.getElementById('change-password').addEventListener('click', openPasswordDialog);
     document.getElementById('sign-out').addEventListener('click', () => window.CanopiAuth.signOut());
+  }
+
+  // Members start with a temporary password from an admin and change it here.
+  function openPasswordDialog() {
+    uploadDialog.innerHTML =
+      '<form class="upload-form">' +
+        '<h2>Change password</h2>' +
+        '<label class="field"><span>New password</span><input type="password" name="password" autocomplete="new-password" minlength="8" required></label>' +
+        '<label class="field"><span>Confirm new password</span><input type="password" name="confirm" autocomplete="new-password" minlength="8" required></label>' +
+        '<p class="form-message" id="password-message"></p>' +
+        '<div class="modal-actions">' +
+          '<button type="button" class="btn btn-secondary" data-upload-cancel>Cancel</button>' +
+          '<button type="submit" class="btn btn-primary">Save password</button>' +
+        '</div>' +
+      '</form>';
+    const form = uploadDialog.querySelector('form');
+    const message = uploadDialog.querySelector('#password-message');
+    uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (form.password.value !== form.confirm.value) { message.textContent = 'The two passwords don\u2019t match.'; return; }
+      form.querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
+      const { error } = await db.auth.updateUser({ password: form.password.value });
+      if (error) {
+        form.querySelectorAll('button, input').forEach((el) => { el.disabled = false; });
+        message.textContent = 'Couldn\u2019t change it: ' + error.message;
+        return;
+      }
+      form.innerHTML = '<h2>Password changed</h2><p class="section-lead">Use your new password next time you sign in.</p>' +
+        '<div class="modal-actions"><button type="button" class="btn btn-primary" data-upload-cancel>Done</button></div>';
+      form.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+    });
+    uploadDialog.showModal();
+    form.password.focus();
   }
 
   // ---------- home ----------

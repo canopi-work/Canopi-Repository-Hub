@@ -63,10 +63,12 @@
         '<label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password"></label>' +
         '<p id="auth-message" class="auth-note"></p>' +
         '<button type="submit" class="btn btn-primary btn-block">Sign in</button>' +
-        '<div class="auth-links">' +
-          '<button type="button" class="link-button" data-auth-action="magic">Email me a sign-in link</button>' +
-          '<button type="button" class="link-button" data-auth-action="reset">Forgot password?</button>' +
-        '</div>' +
+        (cfg.emailEnabled
+          ? '<div class="auth-links">' +
+              '<button type="button" class="link-button" data-auth-action="magic">Email me a sign-in link</button>' +
+              '<button type="button" class="link-button" data-auth-action="reset">Forgot password?</button>' +
+            '</div>'
+          : '<p class="auth-help">Forgot your password? Ask an admin to reset it.</p>') +
       '</form>'
     );
     const form = document.getElementById('auth-form');

@@ -319,6 +319,7 @@ a.search-result-row:hover .search-result-title { text-decoration-color: currentC
 .auth-note { font-size: 14px; color: var(--color-neutral-700); }
 .auth-error { font-size: 14px; color: #a1263a; }
 .auth-note:empty, .auth-error:empty { display: none; }
+.auth-help { font-size: 13px; color: var(--color-neutral-600); text-align: center; margin: var(--space-4) 0 0; }
 .auth-links { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); font-size: 13px; flex-wrap: wrap; }
 
 /* — sidebar account — */
@@ -383,7 +384,8 @@ a.search-result-row:hover .search-result-title { text-decoration-color: currentC
   .quick-tile-kb, .quick-tile-projects, .quick-tile-meetings { grid-column: span 2; }
   .two-col { grid-template-columns: 1fr; }
   .sidebar-account { margin-top: 0; flex-direction: row; align-items: center; flex-wrap: wrap; width: 100%; }
-  .sidebar-user { margin-top: 0; flex: 1; min-width: 0; }
+  .sidebar-user { margin-top: 0; flex-basis: 100%; order: -1; }
+  .sidebar-signout { margin-right: var(--space-3); }
   .upload-row { flex-wrap: wrap; }
   .upload-meta { white-space: normal; flex-wrap: wrap; }
 }

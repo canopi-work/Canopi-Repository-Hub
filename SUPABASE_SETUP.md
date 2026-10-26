@@ -23,7 +23,7 @@ Supabase itself can't host the site's pages (its storage serves `.html` as plain
 4. **Tell Supabase where the site lives.** Go to Authentication > URL Configuration.
    - Site URL: the site's address, e.g. `https://canopi-work.github.io/Canopi-Repository-Hub/`
    - Redirect URLs: add the same address.
-5. **Set up email sending.** Supabase's built-in email only sends to members of your Supabase team, and only a few emails per hour, so invites to regular staff won't arrive. Go to Authentication > Emails > SMTP Settings and enter your mail provider's SMTP details (for example Microsoft 365, Google Workspace, Resend, or SendGrid).
+5. **(Optional) Set up email sending.** Skip this to run in no-email mode (see "Adding members"). Supabase's built-in email only sends to members of your Supabase team, and only a few emails per hour, so invites to regular staff won't arrive. Go to Authentication > Emails > SMTP Settings and enter your mail provider's SMTP details (for example Microsoft 365, Google Workspace, Resend, or SendGrid).
 6. **Connect the site.** Go to Project Settings > API. Copy the **Project URL** and the **anon public** key into [`config.js`](config.js), then commit. The anon key is meant to be public; the database rules in `schema.sql` decide what people can do.
 
 ## Updating the database after a site update
@@ -32,12 +32,25 @@ If a site update changes `supabase/schema.sql`, open SQL Editor > New query, pas
 
 ## Adding members
 
-- **Invite by email (recommended).** Go to Authentication > Users > Add user > Send invitation. The member gets an email, clicks the link, and chooses a password on the site.
-- **Without email.** Go to Authentication > Users > Add user > Create new user. Set a temporary password, tick "Auto Confirm User", and share the password with them privately.
+The site starts in **no-email mode** (`emailEnabled: false` in `config.js`): an admin creates each account and hands out a temporary password.
 
-Members can also sign in with an emailed one-time link ("Email me a sign-in link") or reset a forgotten password from the sign-in screen. Both need step 5.
+1. Go to Authentication > Users > **Add user** > **Create new user**.
+2. Enter the member's email and a temporary password, tick **Auto Confirm User**, and click **Create user**.
+3. Send them the site link, their email and the temporary password privately, for example in a Teams direct message.
+4. They sign in and click **Change password** in the sidebar to choose their own.
+
+**Resetting a forgotten password:** run this in the SQL Editor with their email and a new temporary password, then send it to them:
+
+```sql
+update auth.users
+set encrypted_password = extensions.crypt('New-Temp-Password-123', extensions.gen_salt('bf')),
+    updated_at = now()
+where email = 'name@canopi.work';
+```
 
 To remove someone, delete them under Authentication > Users. Their uploads stay on the site.
+
+**Turning on email later:** once SMTP is set up (step 5), set `emailEnabled: true` in `config.js`. Then "Email me a sign-in link", "Forgot password?" and email invites (Add user > Send invitation) all work.
 
 ## Admins
 
