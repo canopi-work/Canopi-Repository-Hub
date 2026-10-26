@@ -142,6 +142,50 @@
     { title: 'Pitch Deck 2026 Q2 V2', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:p:/g/personal/angela_canopi_work/IQCRCy5Td0w7W8IJTJbInC1cAWGpmZ5I1J7C3U9_x9xkz3A?e=x7wo4p' },
   ];
 
+  // ---------- SharePoint documents shown inside the site ----------
+  // Word/Excel/PowerPoint/PDF share links from the lists above open on an
+  // in-site viewer page (#doc-<key>) using SharePoint's embedded view, instead
+  // of a new tab. Folder links still open SharePoint, since folders can't be embedded.
+  const SHAREPOINT_DOC_KINDS = { w: 'Word', x: 'Excel', p: 'PowerPoint', b: 'PDF' };
+  const DOC_PREFIX = 'doc-';
+  const SHAREPOINT_DOCS = {}; // key -> { title, href, section, kind }
+  const SHAREPOINT_KEY_BY_HREF = {};
+  function sharePointKind(href) {
+    const m = /^https:\/\/[\w-]+\.sharepoint\.com\/:(\w):\//.exec(href || '');
+    if (m) return SHAREPOINT_DOC_KINDS[m[1]] || null;
+    if (/^https:\/\/[\w-]+\.sharepoint\.com\/.*\.(docx?|xlsx?|pptx?|pdf)(\?|$)/i.test(href || '')) {
+      const ext = /\.(\w+)(\?|$)/.exec(href.split('?')[0] + '?')[1].toLowerCase();
+      return { doc: 'Word', docx: 'Word', xls: 'Excel', xlsx: 'Excel', ppt: 'PowerPoint', pptx: 'PowerPoint', pdf: 'PDF' }[ext];
+    }
+    return null;
+  }
+  function shortKey(text) {
+    let h = 5381;
+    for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  [
+    [MEETINGS_TEAM_WEEKLY, 'meetings-team-weekly'],
+    [RESOURCE_INVESTOR_DOCS, 'resources-investor'],
+    [RESOURCE_INVESTOR_DECKS, 'resources-investor'],
+    [TEAM_PRODUCT_SHARED, 'team-product-shared'],
+    [TEAM_ENGINEERING_SHARED, 'team-engineering-shared'],
+    [PROJECTS_DOCUMENTATION_ADRS, 'projects-documentation-adrs'],
+    [PROJECTS_DOCUMENTATION_STAKEHOLDER, 'projects-documentation-raci'],
+    [PROJECTS_DOCUMENTATION_TECHDESIGN, 'projects-documentation-techdesign'],
+    [PROJECTS_COMPLETED_MARKET_RESEARCH, 'projects-completed-lessons'],
+    [PROJECTS_COMPLETED_ARCHIVE, 'projects-completed-archive'],
+  ].forEach(([list, section]) => list.forEach((item) => {
+    const kind = sharePointKind(item.href);
+    if (!kind) return;
+    const key = shortKey(item.href);
+    SHAREPOINT_DOCS[key] = { title: item.title, href: item.href, section, kind };
+    SHAREPOINT_KEY_BY_HREF[item.href] = key;
+  }));
+  function sharePointEmbedUrl(href) {
+    return href + (href.indexOf('?') === -1 ? '?' : '&') + 'action=embedview';
+  }
+
   // Recurring 1:1 pairs — [display label (plain text), route slug]
   const RECURRING_1ON1_PAIRS = [
     ['Bionka<>Anj', 'bionka-anj'],
@@ -264,6 +308,7 @@
   function docRowHTML(d) {
     let link;
     if (d.route) link = '<a href="#' + d.route + '"><span>' + d.title + '</span></a>';
+    else if (d.hrefExternal && SHAREPOINT_KEY_BY_HREF[d.href]) link = '<a href="#' + DOC_PREFIX + SHAREPOINT_KEY_BY_HREF[d.href] + '"><span>' + d.title + '</span></a>';
     else if (d.hrefExternal) link = '<a href="' + d.href + '" target="_blank" rel="noopener"><span>' + d.title + '</span></a>';
     else if (d.hrefDownload) link = '<a href="' + d.href + '" download><span>' + d.title + '</span></a>';
     else link = '<span class="plain">' + d.title + '</span>';
@@ -1298,6 +1343,23 @@
       '</div>';
   }
 
+  function sharePointViewerHTML(doc) {
+    const group = sectionGroup(doc.section);
+    return crumb([
+      { label: 'Home', route: 'home' },
+      { label: group, route: SECTION_ROOTS[group] },
+      { label: escapeHtml(TITLES[doc.section] || doc.section), route: doc.section },
+      { label: escapeHtml(doc.title) },
+    ]) +
+      '<h1>' + escapeHtml(doc.title) + '</h1>' +
+      '<p class="detail-meta"><span class="tag tag-outline">' + doc.kind + '</span> Stored in SharePoint</p>' +
+      '<div class="viewer-actions">' +
+        '<a class="btn btn-secondary" href="' + escapeHtml(doc.href) + '" target="_blank" rel="noopener">Open in SharePoint &#8599;</a>' +
+      '</div>' +
+      frameHTML(sharePointEmbedUrl(doc.href)) +
+      '<p class="viewer-note">Shown from SharePoint. If it asks you to sign in or stays blank, sign in to Microsoft 365 in this browser, or use Open in SharePoint.</p>';
+  }
+
   // Uploaded files need a signed link before they can be shown; fill the preview in once we have it.
   async function fillFilePreview(id) {
     const d = findUpload(id);
@@ -1628,13 +1690,15 @@
 
   function currentRoute() {
     const r = (location.hash || '#home').slice(1);
-    return TITLES[r] !== undefined || r === 'home' || r.indexOf(VIEW_PREFIX) === 0 ? r : 'home';
+    return TITLES[r] !== undefined || r === 'home' || r.indexOf(VIEW_PREFIX) === 0 || SHAREPOINT_DOCS[r.slice(DOC_PREFIX.length)] && r.indexOf(DOC_PREFIX) === 0 ? r : 'home';
   }
 
   function setActiveNav(route) {
     if (route.indexOf(VIEW_PREFIX) === 0) {
       const d = findUpload(route.slice(VIEW_PREFIX.length));
       route = d ? d.section : 'home';
+    } else if (route.indexOf(DOC_PREFIX) === 0) {
+      route = SHAREPOINT_DOCS[route.slice(DOC_PREFIX.length)].section;
     }
     navEl.querySelectorAll('a').forEach((a) => {
       const key = a.getAttribute('data-nav-key');
@@ -1647,7 +1711,9 @@
     const route = currentRoute();
     let html;
     const viewId = route.indexOf(VIEW_PREFIX) === 0 ? route.slice(VIEW_PREFIX.length) : null;
+    const spDoc = route.indexOf(DOC_PREFIX) === 0 ? SHAREPOINT_DOCS[route.slice(DOC_PREFIX.length)] : null;
     if (viewId) html = viewerHTML(viewId);
+    else if (spDoc) html = sharePointViewerHTML(spDoc);
     else if (route === 'home') html = homeHTML();
     else if (SECTION_INDEXES[route]) html = SECTION_INDEXES[route]();
     else if (DOC_LISTS[route]) html = DOC_LISTS[route]() + (UPLOAD_ROUTES.indexOf(route) !== -1 ? uploadsSectionHTML(route) : '');
@@ -1657,7 +1723,7 @@
 
     contentEl.innerHTML = html;
     const viewed = viewId && findUpload(viewId);
-    document.title = route === 'home' ? 'Canopi Repository' : (viewed ? viewed.title : TITLES[route] || 'Canopi Repository') + ' \u2014 Canopi Repository';
+    document.title = route === 'home' ? 'Canopi Repository' : (viewed ? viewed.title : spDoc ? spDoc.title : TITLES[route] || 'Canopi Repository') + ' \u2014 Canopi Repository';
     setActiveNav(route);
     window.scrollTo(0, 0);
     recordRecentlyViewed(route);
@@ -1667,6 +1733,9 @@
   }
 
   function searchResultHTML(item) {
+    if (item.external && SHAREPOINT_KEY_BY_HREF[item.href]) {
+      item = Object.assign({}, item, { route: DOC_PREFIX + SHAREPOINT_KEY_BY_HREF[item.href], external: false });
+    }
     const meta = (item.meta || '') + (item.comingSoon ? ' — Coming soon' : item.download ? ' — download' : item.external ? ' — opens SharePoint' : '');
     const inner = '<span class="search-result-title">' + item.title + '</span>' +
       (meta ? '<span class="search-result-meta">' + meta + '</span>' : '');
