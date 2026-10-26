@@ -3,6 +3,10 @@
 (() => {
   'use strict';
 
+  // auth.js holds the page until someone signs in; without it there is nothing to show.
+  if (!window.CanopiAuth) return;
+  const db = window.CanopiAuth.client;
+
   const NAV = [
     { key: 'home', label: 'Home' },
     { key: 'kb', label: 'Knowledge Base' },
@@ -153,6 +157,7 @@
   const ICON_USERS = 'M16 3.13a4 4 0 0 1 0 7.75 M13 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M22.5 21v-2a4 4 0 0 0-3-3.87 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8';
   const ICON_CALENDAR = 'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z';
   const ICON_FOLDER_OPEN = 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9';
+  const ICON_UPLOAD = 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12';
   const ICONS = {
     'Active Projects': 'M22 12h-4l-3 9L9 3l-3 9H2',
     'Completed Projects': 'M21.801 10A10 10 0 1 1 17 3.335 M9 11l3 3L22 4',
@@ -229,7 +234,7 @@
 
   // ---------- helpers ----------
   function escapeHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
   function icon(d, size) {
     size = size || 20;
@@ -273,18 +278,25 @@
     return '<h2>' + heading + '</h2><div class="doclist">' + rows.map(docRowHTML).join('') + '</div>';
   }
 
+  // 1:1 pair pages keep the intake form: uploads are visible to every member,
+  // and those notes must stay private to the two people involved.
   const CONTRIBUTE_FORM_URL = 'https://forms.cloud.microsoft/r/8cPduYGSqV';
-  function contributeButtonHTML(lead) {
-    return '<p class="section-lead">' + lead + '</p>' +
-      '<a href="' + CONTRIBUTE_FORM_URL + '" target="_blank" rel="noopener" class="btn btn-primary">Contribute a document</a>';
+  function uploadButtonHTML(route, label) {
+    return '<button type="button" class="btn btn-primary" data-upload="' + (route || '') + '">' + icon(ICON_UPLOAD, 16) + (label || 'Upload a document') + '</button>';
   }
-  function emptyStateHTML(crumbItems, title) {
+  function emptyStateHTML(crumbItems, title, uploadRoute) {
+    const body = uploadRoute
+      ? 'Nothing has been added here yet. If you have a document for this section, upload it and it&rsquo;ll show up here for the whole team.'
+      : 'Nothing has been added here yet. If you have a document for this section, contribute it and it&rsquo;ll get added.';
+    const action = uploadRoute
+      ? uploadButtonHTML(uploadRoute)
+      : '<a href="' + CONTRIBUTE_FORM_URL + '" target="_blank" rel="noopener" class="btn btn-primary">Contribute</a>';
     return crumb(crumbItems) + '<h1>' + title + '</h1>' +
       '<div class="empty-state">' +
         '<span class="empty-state-icon">' + icon(ICON_FOLDER_OPEN, 30) + '</span>' +
         '<p class="empty-state-title">No available data</p>' +
-        '<p class="empty-state-body">Nothing has been added here yet. If you have a document for this section, contribute it and it&rsquo;ll get added.</p>' +
-        '<a href="' + CONTRIBUTE_FORM_URL + '" target="_blank" rel="noopener" class="btn btn-primary">Contribute</a>' +
+        '<p class="empty-state-body">' + body + '</p>' +
+        action +
       '</div>';
   }
 
@@ -369,7 +381,7 @@
     ),
     'team-executive': () => sectionIndexHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Team Spaces', route: 'team-spaces' }, { label: 'Executive Team' }],
-      'Executive Team', 'A static site has no login, so anything here is visible to anyone with the link.',
+      'Executive Team', 'Meeting notes and shared resources for the executive team. Visible to every signed-in member.',
       [
         withIcon({ label: 'Meeting Notes', route: 'team-executive-notes' }),
         withIcon({ label: 'Shared Resources', route: 'team-executive-shared' }),
@@ -463,48 +475,47 @@
       '<h1>Investor Relations</h1>' +
       '<p class="section-lead">Documents for current and prospective investors.</p>' +
       docListSectionHTML('Documents', RESOURCE_INVESTOR_DOCS.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))) +
-      docListSectionHTML('Presentations', RESOURCE_INVESTOR_DECKS.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))) +
-      contributeButtonHTML('Have another investor document to add?'),
+      docListSectionHTML('Presentations', RESOURCE_INVESTOR_DECKS.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))),
     'team-product-shared': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Team Spaces', route: 'team-spaces' }, { label: 'Product Team', route: 'team-product' }, { label: 'Shared Resources' }],
       'Product Team Shared Resources', 'Shared documents for the product team.',
       TEAM_PRODUCT_SHARED.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'projects-completed-lessons': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Projects', route: 'projects' }, { label: 'Completed Projects', route: 'projects-completed' }, { label: 'Market Research' }],
       'Market Research', 'Market research conducted for Canopi.',
       PROJECTS_COMPLETED_MARKET_RESEARCH.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'projects-documentation-adrs': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Projects', route: 'projects' }, { label: 'Documentation', route: 'projects-documentation' }, { label: 'Architecture Decision Records (ADRs)' }],
       'Architecture Decision Records (ADRs)', 'Architecture decision records for Canopi projects.',
       PROJECTS_DOCUMENTATION_ADRS.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'projects-documentation-raci': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Projects', route: 'projects' }, { label: 'Documentation', route: 'projects-documentation' }, { label: "Stakeholder's Records" }],
       "Stakeholder's Records", 'Stakeholder records for Canopi projects.',
       PROJECTS_DOCUMENTATION_STAKEHOLDER.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'meetings-team-weekly': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Meetings', route: 'meetings' }, { label: 'Team Meetings', route: 'meetings-team' }, { label: 'Weekly Team Meeting Notes' }],
       'Weekly Team Meeting Notes', 'Minutes from the weekly team meeting.',
       MEETINGS_TEAM_WEEKLY.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefDownload: !!s.download, hrefExternal: !s.download }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'projects-completed-archive': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Projects', route: 'projects' }, { label: 'Completed Projects', route: 'projects-completed' }, { label: 'Project Archive' }],
       'Project Archive', 'Archived sales and pitch decks.',
       PROJECTS_COMPLETED_ARCHIVE.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'projects-documentation-techdesign': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Projects', route: 'projects' }, { label: 'Documentation', route: 'projects-documentation' }, { label: 'Technical Design Docs' }],
       'Technical Design Docs', 'Technical design and research docs for Canopi projects.',
       PROJECTS_DOCUMENTATION_TECHDESIGN.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'team-engineering-shared': () => docListHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Team Spaces', route: 'team-spaces' }, { label: 'Engineering Team', route: 'team-engineering' }, { label: 'Shared Resources' }],
       'Engineering Team Shared Resources', 'Shared documents for the engineering team.',
       TEAM_ENGINEERING_SHARED.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
-    ) + contributeButtonHTML('Have another document to add?'),
+    ),
     'meetings-1on1': () =>
       crumb([{ label: 'Home', route: 'home' }, { label: 'Meetings', route: 'meetings' }, { label: 'One-on-One Minutes' }]) +
       '<h1>One-on-One Minutes</h1>' +
@@ -1120,10 +1131,201 @@
       crumb: [{ label: 'Home', route: 'home' }, { label: 'Meetings', route: 'meetings' }, { label: 'One-on-One Minutes', route: 'meetings-1on1' }, { label: 'Recurring 1:1 Notes', route: 'meetings-1on1-recurring' }, { label: safeLabel }],
     });
   });
+  const isPrivateRoute = (route) => route.indexOf('meetings-1on1') === 0;
+  // Pages that start empty: list what members have uploaded, or show the empty state.
+  const UPLOAD_ONLY_PAGES = {};
   CONTRIBUTE_PAGES.forEach((p) => {
-    DETAIL_PAGES[p.route] = emptyStateHTML(p.crumb, p.title);
     TITLES[p.route] = p.plainTitle || p.title;
+    if (isPrivateRoute(p.route)) {
+      DETAIL_PAGES[p.route] = emptyStateHTML(p.crumb, p.title);
+      return;
+    }
+    UPLOAD_ONLY_PAGES[p.route] = () => uploadsFor(p.route).length
+      ? crumb(p.crumb) + '<h1>' + p.title + '</h1>' + uploadsSectionHTML(p.route, true)
+      : emptyStateHTML(p.crumb, p.title, p.route);
   });
+
+  // ---------- member uploads (Supabase) ----------
+  // Files live in the private "documents" storage bucket; each one has a row in
+  // the documents table saying which page (route) it belongs to. Any doc-list
+  // page and any empty page accepts uploads, except the private 1:1 pages.
+  const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // matches the bucket limit in supabase/schema.sql
+  const UPLOAD_ROUTES = Object.keys(DOC_LISTS).concat(Object.keys(UPLOAD_ONLY_PAGES)).filter((r) => !isPrivateRoute(r));
+  const SECTION_PREFIXES = { kb: 'Knowledge Base', projects: 'Projects', meetings: 'Meetings', resources: 'Resources', team: 'Team Spaces' };
+  let UPLOADS = [];
+  let CURRENT_USER = null;
+  let IS_ADMIN = false;
+
+  function sectionGroup(route) { return SECTION_PREFIXES[route.split('-')[0]] || 'Other'; }
+  function sectionPath(route) { return sectionGroup(route) + ' \u203a ' + (TITLES[route] || route); }
+  function uploadsFor(route) { return UPLOADS.filter((d) => d.section === route); }
+
+  async function loadUploads() {
+    const { data, error } = await db.from('documents').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Could not load uploads', error); return; }
+    UPLOADS = data;
+  }
+  async function loadIsAdmin() {
+    const { data } = await db.rpc('is_admin');
+    IS_ADMIN = data === true;
+  }
+
+  function formatDate(iso) {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function formatSize(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    return bytes < 1024 * 1024 ? Math.max(1, Math.round(bytes / 1024)) + ' KB' : (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  }
+  function uploaderName(d) { return d.uploader_email ? d.uploader_email.split('@')[0] : 'a member'; }
+
+  function uploadRowHTML(d) {
+    const canDelete = IS_ADMIN || (CURRENT_USER && d.uploaded_by === CURRENT_USER.id);
+    return '<div class="doclist-row upload-row">' +
+      '<a href="#" data-doc="' + d.id + '"><span>' + escapeHtml(d.title) + '</span></a>' +
+      '<span class="upload-meta">' + escapeHtml(uploaderName(d)) + ' &middot; ' + formatDate(d.created_at) +
+        (d.size_bytes ? ' &middot; ' + formatSize(d.size_bytes) : '') +
+        (canDelete ? '<button type="button" class="link-button upload-delete" data-doc-delete="' + d.id + '">Delete</button>' : '') +
+      '</span></div>';
+  }
+  function uploadsSectionHTML(route, standalone) {
+    const docs = uploadsFor(route);
+    const list = docs.length
+      ? '<div class="doclist">' + docs.map(uploadRowHTML).join('') + '</div>'
+      : '<p class="section-lead">Nothing uploaded here yet.</p>';
+    return (standalone ? '' : '<h2>Uploaded by the team</h2>') + list +
+      '<div class="upload-actions">' + uploadButtonHTML(route) + '</div>';
+  }
+
+  async function downloadUpload(id) {
+    const d = UPLOADS.find((u) => u.id === id);
+    if (!d) return;
+    const { data, error } = await db.storage.from('documents').createSignedUrl(d.file_path, 60, { download: d.file_name });
+    if (error) { alert('Could not open that file: ' + error.message); return; }
+    location.assign(data.signedUrl);
+  }
+
+  async function deleteUpload(id) {
+    const d = UPLOADS.find((u) => u.id === id);
+    if (!d || !confirm('Delete \u201c' + d.title + '\u201d? This can\u2019t be undone.')) return;
+    const { error } = await db.from('documents').delete().eq('id', id);
+    if (error) { alert('Could not delete: ' + error.message); return; }
+    await db.storage.from('documents').remove([d.file_path]);
+    await loadUploads();
+    render();
+  }
+
+  // ---------- upload dialog ----------
+  const uploadDialog = document.createElement('dialog');
+  uploadDialog.className = 'modal';
+  document.body.appendChild(uploadDialog);
+
+  function sectionOptionsHTML(selected) {
+    const groups = {};
+    UPLOAD_ROUTES.forEach((r) => { (groups[sectionGroup(r)] = groups[sectionGroup(r)] || []).push(r); });
+    return Object.keys(groups).map((g) =>
+      '<optgroup label="' + g + '">' +
+      groups[g].sort((a, b) => TITLES[a].localeCompare(TITLES[b])).map((r) =>
+        '<option value="' + r + '"' + (r === selected ? ' selected' : '') + '>' + escapeHtml(TITLES[r]) + '</option>'
+      ).join('') + '</optgroup>'
+    ).join('');
+  }
+
+  function openUploadDialog(route) {
+    uploadDialog.innerHTML =
+      '<form class="upload-form" id="upload-form">' +
+        '<h2>Upload a document</h2>' +
+        '<label class="field"><span>Section</span><select name="section" required>' +
+          (route ? '' : '<option value="" selected disabled>Choose where it belongs&hellip;</option>') +
+          sectionOptionsHTML(route) + '</select></label>' +
+        '<label class="dropzone" id="upload-dropzone">' +
+          '<input type="file" name="file" required>' +
+          icon(ICON_UPLOAD, 26) +
+          '<span class="dropzone-label">Drop a file here, or click to choose one</span>' +
+          '<span class="dropzone-hint">PDF, Word, Excel, PowerPoint, images &mdash; up to 50 MB</span>' +
+        '</label>' +
+        '<label class="field"><span>Title</span><input type="text" name="title" maxlength="200" required placeholder="e.g. 26-10-01 Weekly Team Meeting Minutes"></label>' +
+        '<p class="form-message" id="upload-message"></p>' +
+        '<div class="modal-actions">' +
+          '<button type="button" class="btn btn-secondary" data-upload-cancel>Cancel</button>' +
+          '<button type="submit" class="btn btn-primary">Upload</button>' +
+        '</div>' +
+      '</form>';
+    const form = uploadDialog.querySelector('form');
+    const zone = uploadDialog.querySelector('#upload-dropzone');
+    const label = zone.querySelector('.dropzone-label');
+    const message = uploadDialog.querySelector('#upload-message');
+
+    function pickFile(file) {
+      if (!file) return;
+      label.textContent = file.name + ' (' + formatSize(file.size) + ')';
+      zone.classList.add('has-file');
+      if (!form.title.value.trim()) form.title.value = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ');
+    }
+    form.file.addEventListener('change', () => pickFile(form.file.files[0]));
+    ['dragenter', 'dragover'].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.add('dragging'); }));
+    ['dragleave', 'drop'].forEach((t) => zone.addEventListener(t, () => zone.classList.remove('dragging')));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!e.dataTransfer.files.length) return;
+      form.file.files = e.dataTransfer.files;
+      pickFile(form.file.files[0]);
+    });
+    uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = form.file.files[0];
+      if (!file) { message.textContent = 'Choose a file to upload.'; return; }
+      if (file.size > MAX_UPLOAD_BYTES) { message.textContent = 'That file is over 50 MB.'; return; }
+      const section = form.section.value;
+      const title = form.title.value.trim();
+      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+      const path = CURRENT_USER.id + '/' + crypto.randomUUID() + '/' + safeName;
+
+      form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = true; });
+      message.textContent = 'Uploading\u2026';
+      const up = await db.storage.from('documents').upload(path, file, { contentType: file.type || 'application/octet-stream' });
+      let error = up.error;
+      if (!error) {
+        const ins = await db.from('documents').insert({
+          section, title, file_path: path, file_name: file.name,
+          mime_type: file.type || null, size_bytes: file.size,
+          uploaded_by: CURRENT_USER.id, uploader_email: CURRENT_USER.email,
+        });
+        error = ins.error;
+        if (error) await db.storage.from('documents').remove([path]);
+      }
+      if (error) {
+        form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
+        message.textContent = 'Upload failed: ' + error.message;
+        return;
+      }
+      uploadDialog.close();
+      await loadUploads();
+      if (location.hash.slice(1) === section) render();
+      else location.hash = section;
+    });
+
+    uploadDialog.showModal();
+  }
+
+  document.addEventListener('click', (e) => {
+    const up = e.target.closest('[data-upload]');
+    if (up) { e.preventDefault(); openUploadDialog(up.getAttribute('data-upload')); return; }
+    const del = e.target.closest('[data-doc-delete]');
+    if (del) { e.preventDefault(); deleteUpload(del.getAttribute('data-doc-delete')); return; }
+    const doc = e.target.closest('[data-doc]');
+    if (doc) { e.preventDefault(); downloadUpload(doc.getAttribute('data-doc')); }
+  });
+
+  function renderAccount() {
+    document.getElementById('sidebar-account').innerHTML =
+      uploadButtonHTML('', 'Upload') +
+      '<div class="sidebar-user" title="' + escapeHtml(CURRENT_USER.email) + '">' + escapeHtml(CURRENT_USER.email) + '</div>' +
+      '<button type="button" class="link-button sidebar-signout" id="sign-out">Sign out</button>';
+    document.getElementById('sign-out').addEventListener('click', () => window.CanopiAuth.signOut());
+  }
 
   // ---------- home ----------
   function greetingFor(date) {
@@ -1143,7 +1345,11 @@
   }
 
   function homeHTML() {
-    const recentUpdates = [
+    // Latest member uploads first; the hand-picked list fills in until there are some.
+    const recentUploads = UPLOADS.slice(0, 5).map((d) => ({
+      title: escapeHtml(d.title), meta: formatDate(d.created_at), route: d.section,
+    }));
+    const recentUpdates = recentUploads.length ? recentUploads : [
       { title: "Stakeholder's Records", meta: 'Today', route: 'projects-documentation-raci' },
       { title: 'Engineering Team Shared Resources', meta: 'Today', route: 'team-engineering-shared' },
       { title: 'Technical Design Docs', meta: 'Today', route: 'projects-documentation-techdesign' },
@@ -1218,7 +1424,8 @@
     let html;
     if (route === 'home') html = homeHTML();
     else if (SECTION_INDEXES[route]) html = SECTION_INDEXES[route]();
-    else if (DOC_LISTS[route]) html = DOC_LISTS[route]();
+    else if (DOC_LISTS[route]) html = DOC_LISTS[route]() + (UPLOAD_ROUTES.indexOf(route) !== -1 ? uploadsSectionHTML(route) : '');
+    else if (UPLOAD_ONLY_PAGES[route]) html = UPLOAD_ONLY_PAGES[route]();
     else if (DETAIL_PAGES[route]) html = DETAIL_PAGES[route];
     else html = homeHTML();
 
@@ -1235,6 +1442,7 @@
     const inner = '<span class="search-result-title">' + item.title + '</span>' +
       (meta ? '<span class="search-result-meta">' + meta + '</span>' : '');
     if (item.comingSoon) return '<span class="search-result-row search-result-disabled">' + inner + '</span>';
+    if (item.docId) return '<a href="#" data-doc="' + item.docId + '" class="search-result-row">' + inner + '</a>';
     if (item.route) return '<a href="#' + item.route + '" class="search-result-row">' + inner + '</a>';
     if (item.download) return '<a href="' + item.href + '" download class="search-result-row">' + inner + '</a>';
     return '<a href="' + item.href + '" target="_blank" rel="noopener" class="search-result-row">' + inner + '</a>';
@@ -1247,7 +1455,8 @@
     input.addEventListener('input', () => {
       const q = input.value.trim().toLowerCase();
       if (!q) { resultsEl.innerHTML = ''; return; }
-      const matches = SEARCH_INDEX.filter((i) => (i.title + ' ' + (i.keywords || '') + ' ' + (i.meta || '')).toLowerCase().indexOf(q) !== -1).slice(0, 20);
+      const uploaded = UPLOADS.map((d) => ({ title: escapeHtml(d.title), meta: sectionPath(d.section), download: true, docId: d.id }));
+      const matches = SEARCH_INDEX.concat(uploaded).filter((i) => (i.title + ' ' + (i.keywords || '') + ' ' + (i.meta || '')).toLowerCase().indexOf(q) !== -1).slice(0, 20);
       if (!matches.length) {
         resultsEl.innerHTML = '<div class="search-results"><div class="search-empty">No matches</div></div>';
         return;
@@ -1256,6 +1465,12 @@
     });
   }
 
-  window.addEventListener('hashchange', render);
-  render();
+  contentEl.innerHTML = '<p class="section-lead">Loading&hellip;</p>';
+  window.CanopiAuth.onReady(async (session) => {
+    CURRENT_USER = session.user;
+    renderAccount();
+    await Promise.all([loadUploads(), loadIsAdmin()]);
+    window.addEventListener('hashchange', render);
+    render();
+  });
 })();

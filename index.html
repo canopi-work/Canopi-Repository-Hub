@@ -8,7 +8,14 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="shell">
+<div class="auth-screen" id="auth-screen">
+  <div class="auth-card">
+    <span class="auth-logo"><img src="assets/canopi-logo.png" alt=""></span>
+    <h1>Canopi Repository</h1>
+    <div id="auth-body"><p class="auth-note">Loading&hellip;</p></div>
+  </div>
+</div>
+<div class="shell" hidden>
   <div class="frame">
 
     <aside class="sidebar">
@@ -17,6 +24,7 @@
         <span class="sidebar-brand-name">Canopi</span>
       </a>
       <nav class="sidebar-nav" id="sidebar-nav"></nav>
+      <div class="sidebar-account" id="sidebar-account"></div>
     </aside>
 
     <main class="main">
@@ -26,6 +34,9 @@
 
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="auth.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
