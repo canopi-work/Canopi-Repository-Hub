@@ -14,6 +14,7 @@
     { key: 'meetings', label: 'Meetings' },
     { key: 'resources', label: 'Resources' },
     { key: 'team-spaces', label: 'Team Spaces' },
+    { key: 'tasks', label: 'Tasks' },
   ];
 
   const SOPS = [
@@ -199,6 +200,7 @@
   const ICON_CALENDAR = 'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z';
   const ICON_FOLDER_OPEN = 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9';
   const ICON_UPLOAD = 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12';
+  const ICON_PLUS = 'M12 5v14 M5 12h14';
   const ICON_LINK = 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71';
   const ICONS = {
     'Active Projects': 'M22 12h-4l-3 9L9 3l-3 9H2',
@@ -256,7 +258,7 @@
     'kb-bp-slackemail': 'Slack / Email Communication Norms',
     projects: 'Projects', 'projects-active': 'Active Projects',
     'project-detail': 'Example Project: Repository Site Rollout', meetings: 'Meetings',
-    resources: 'Resources', 'team-spaces': 'Team Spaces',
+    resources: 'Resources', 'team-spaces': 'Team Spaces', tasks: 'Tasks',
     'projects-completed': 'Completed Projects', 'projects-templates': 'Project Templates', 'projects-documentation': 'Documentation',
     'meetings-team': 'Team Meetings', 'meetings-1on1': 'One-on-One Minutes',
     'resources-templates': 'Templates', 'resources-forms': 'Forms', 'resources-shared': 'Shared Documents',
@@ -1640,6 +1642,290 @@
     form.password.focus();
   }
 
+  // ---------- task board (#tasks) ----------
+  // Cards live in the tasks table (supabase/schema.sql). Everyone sees every
+  // card; only a card's owner can move, edit or delete it, which the database
+  // enforces too. Due times are entered and shown in US Central Time, the same
+  // clock the Slack alerts in supabase/slack_alerts.sql use.
+  const TASK_COLUMNS = [
+    { key: 'todo', label: 'To do' },
+    { key: 'doing', label: 'In progress' },
+    { key: 'done', label: 'Done' },
+  ];
+  const TASK_TZ = 'America/Chicago';
+  const DEFAULT_DUE_TIME = '17:00';
+  let TASKS = [];
+  let MEMBERS = [];
+  let tasksLoaded = false;
+  let taskFilter = 'all'; // 'all', 'mine', 'overdue', or a member id
+  let tasksChannel = null;
+
+  async function loadTasks() {
+    const { data, error } = await db.from('tasks').select('*')
+      .order('due_at', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+    if (error) { console.error('Could not load tasks', error); return; }
+    TASKS = data;
+    tasksLoaded = true;
+  }
+  async function loadMembers() {
+    const { data, error } = await db.rpc('list_members');
+    if (!error && Array.isArray(data)) MEMBERS = data;
+  }
+
+  // Central Time wall clock <-> ISO timestamps, without a date library.
+  function centralParts(date) {
+    const parts = {};
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: TASK_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date).forEach((p) => { parts[p.type] = p.value; });
+    return parts;
+  }
+  function centralToISO(dateStr, timeStr) {
+    const d = dateStr.split('-').map(Number);
+    const t = (timeStr || DEFAULT_DUE_TIME).split(':').map(Number);
+    const wanted = Date.UTC(d[0], d[1] - 1, d[2], t[0], t[1]);
+    let guess = wanted;
+    for (let i = 0; i < 2; i++) {
+      const p = centralParts(new Date(guess));
+      guess += wanted - Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute);
+    }
+    return new Date(guess).toISOString();
+  }
+  function centralInputValues(iso) {
+    const p = centralParts(new Date(iso));
+    return { date: p.year + '-' + p.month + '-' + p.day, time: p.hour + ':' + p.minute };
+  }
+  function formatDue(iso) {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: TASK_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    }).format(new Date(iso)) + ' CT';
+  }
+  function dueState(t) {
+    if (!t.due_at || t.status === 'done') return '';
+    const ms = new Date(t.due_at).getTime() - Date.now();
+    return ms <= 0 ? 'overdue' : ms <= 24 * 60 * 60 * 1000 ? 'soon' : '';
+  }
+  function memberName(email) { return email ? email.split('@')[0] : 'someone'; }
+  function isMine(t) { return !!CURRENT_USER && t.owner_id === CURRENT_USER.id; }
+  function findTask(id) { return TASKS.find((t) => t.id === id); }
+
+  function visibleTasks() {
+    return TASKS.filter((t) =>
+      taskFilter === 'all' ? true
+        : taskFilter === 'mine' ? isMine(t)
+        : taskFilter === 'overdue' ? dueState(t) === 'overdue'
+        : t.owner_id === taskFilter);
+  }
+
+  function taskCardHTML(t) {
+    const state = dueState(t);
+    const mine = isMine(t);
+    const name = memberName(t.owner_email);
+    return '<div class="task-card' + (state ? ' task-' + state : '') + (mine ? ' task-mine' : '') + '" role="button" tabindex="0" data-task="' + t.id + '"' +
+        (mine ? ' draggable="true"' : '') + '>' +
+      '<span class="task-title">' + escapeHtml(t.title) + '</span>' +
+      (t.notes ? '<span class="task-notes">' + escapeHtml(t.notes) + '</span>' : '') +
+      '<span class="task-meta">' +
+        '<span class="task-owner"><span class="task-avatar">' + escapeHtml(name[0].toUpperCase()) + '</span>' + escapeHtml(name) + '</span>' +
+        (t.due_at ? '<span class="task-due">' + (state === 'overdue' ? 'Overdue &middot; ' : '') + formatDue(t.due_at) + '</span>' : '') +
+      '</span>' +
+    '</div>';
+  }
+
+  function boardHTML() {
+    const tasks = visibleTasks();
+    return TASK_COLUMNS.map((c) => {
+      const cards = tasks.filter((t) => t.status === c.key);
+      return '<section class="task-column" data-column="' + c.key + '">' +
+        '<header class="task-column-head"><span>' + c.label + '</span><span class="task-count">' + cards.length + '</span></header>' +
+        '<div class="task-list">' + (cards.length ? cards.map(taskCardHTML).join('') : '<p class="task-empty">Nothing here</p>') + '</div>' +
+      '</section>';
+    }).join('');
+  }
+
+  function taskFilterOptionsHTML() {
+    const opt = (value, label) => '<option value="' + value + '"' + (taskFilter === value ? ' selected' : '') + '>' + label + '</option>';
+    return opt('all', 'Everyone&rsquo;s tasks') + opt('mine', 'My tasks') + opt('overdue', 'Overdue') +
+      '<optgroup label="By person">' + MEMBERS.map((m) => opt(m.id, escapeHtml(memberName(m.email)))).join('') + '</optgroup>';
+  }
+
+  function tasksPageHTML() {
+    return crumb([{ label: 'Home', route: 'home' }, { label: 'Tasks' }]) +
+      '<div class="tasks-head">' +
+        '<div><h1>Tasks</h1><p class="section-lead">What everyone is working on. Anyone can add a task for anyone; only the person it&rsquo;s assigned to can move, edit or delete it. Times are Central Time.</p></div>' +
+        '<button type="button" class="btn btn-primary" data-task-new>' + icon(ICON_PLUS, 16) + 'New task</button>' +
+      '</div>' +
+      '<div class="tasks-toolbar"><label class="field field-inline"><span>Show</span><select id="task-filter">' + taskFilterOptionsHTML() + '</select></label>' +
+        '<span class="tasks-hint">Drag your own cards between columns, or click a card to open it.</span></div>' +
+      '<div class="task-board" id="task-board">' + (tasksLoaded ? boardHTML() : '<p class="section-lead">Loading&hellip;</p>') + '</div>';
+  }
+
+  function renderBoard() {
+    const board = document.getElementById('task-board');
+    if (board) board.innerHTML = boardHTML();
+    const filter = document.getElementById('task-filter');
+    if (filter) filter.innerHTML = taskFilterOptionsHTML();
+  }
+  async function refreshTasks() {
+    await Promise.all([loadTasks(), MEMBERS.length ? null : loadMembers()]);
+    renderBoard();
+  }
+
+  // Everyone's board updates when anyone changes a task; the minute timer keeps
+  // "overdue" badges current and covers browsers where live updates are blocked.
+  function subscribeToTasks() {
+    if (tasksChannel || typeof db.channel !== 'function') return;
+    tasksChannel = db.channel('task-board')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        if (location.hash.slice(1) === 'tasks') refreshTasks();
+      })
+      .subscribe();
+  }
+  setInterval(() => { if (!document.hidden && location.hash.slice(1) === 'tasks') refreshTasks(); }, 60 * 1000);
+
+  async function moveTask(id, status) {
+    const t = findTask(id);
+    if (!t || !isMine(t) || t.status === status) return;
+    const before = t.status;
+    t.status = status;
+    renderBoard();
+    const { error } = await db.from('tasks').update({ status }).eq('id', id);
+    if (error) { t.status = before; renderBoard(); alert('Couldn’t move that task: ' + error.message); }
+  }
+
+  function memberOptionsHTML(selectedId) {
+    return MEMBERS.map((m) =>
+      '<option value="' + m.id + '"' + (m.id === selectedId ? ' selected' : '') + '>' + escapeHtml(m.email) + '</option>').join('');
+  }
+  function statusOptionsHTML(selected) {
+    return TASK_COLUMNS.map((c) => '<option value="' + c.key + '"' + (c.key === selected ? ' selected' : '') + '>' + c.label + '</option>').join('');
+  }
+
+  function openTaskDialog(id) {
+    const t = id ? findTask(id) : null;
+    if (id && !t) return;
+    if (t && !isMine(t)) {
+      const state = dueState(t);
+      uploadDialog.innerHTML =
+        '<div class="upload-form task-view">' +
+          '<h2>' + escapeHtml(t.title) + '</h2>' +
+          '<dl class="task-facts">' +
+            '<dt>Owner</dt><dd>' + escapeHtml(t.owner_email || '') + '</dd>' +
+            '<dt>Status</dt><dd>' + TASK_COLUMNS.filter((c) => c.key === t.status)[0].label + '</dd>' +
+            '<dt>Due</dt><dd' + (state ? ' class="task-due-' + state + '"' : '') + '>' + (t.due_at ? formatDue(t.due_at) + (state === 'overdue' ? ' (overdue)' : '') : 'No due date') + '</dd>' +
+            '<dt>Added by</dt><dd>' + escapeHtml(t.created_by_email || 'someone') + ' on ' + formatDate(t.created_at) + '</dd>' +
+          '</dl>' +
+          (t.notes ? '<p class="task-view-notes">' + escapeHtml(t.notes) + '</p>' : '') +
+          '<p class="field-hint">Only ' + escapeHtml(memberName(t.owner_email)) + ' can change this task.</p>' +
+          '<div class="modal-actions"><button type="button" class="btn btn-primary" data-upload-cancel>Close</button></div>' +
+        '</div>';
+      uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+      uploadDialog.showModal();
+      return;
+    }
+
+    const due = t && t.due_at ? centralInputValues(t.due_at) : { date: '', time: DEFAULT_DUE_TIME };
+    uploadDialog.innerHTML =
+      '<form class="upload-form">' +
+        '<h2>' + (t ? 'Edit task' : 'New task') + '</h2>' +
+        '<label class="field"><span>Task</span><input type="text" name="title" maxlength="200" required placeholder="e.g. Send Q4 board deck to investors" value="' + (t ? escapeHtml(t.title) : '') + '"></label>' +
+        '<label class="field"><span>Notes (optional)</span><textarea name="notes" rows="3" maxlength="5000">' + (t && t.notes ? escapeHtml(t.notes) : '') + '</textarea></label>' +
+        '<div class="field-row">' +
+          '<label class="field"><span>Owner</span><select name="owner" required>' + memberOptionsHTML(t ? t.owner_id : CURRENT_USER.id) + '</select></label>' +
+          '<label class="field"><span>Status</span><select name="status">' + statusOptionsHTML(t ? t.status : 'todo') + '</select></label>' +
+        '</div>' +
+        '<div class="field-row">' +
+          '<label class="field"><span>Due date (optional)</span><input type="date" name="due_date" value="' + due.date + '"></label>' +
+          '<label class="field"><span>Time (CT)</span><input type="time" name="due_time" value="' + due.time + '"></label>' +
+        '</div>' +
+        '<p class="field-hint">#teamprogress on Slack gets a heads-up 24 hours before the due time and an alert if it&rsquo;s missed.</p>' +
+        '<p class="form-message" id="task-message"></p>' +
+        '<div class="modal-actions">' +
+          (t ? '<button type="button" class="btn btn-secondary task-delete" data-task-delete>Delete</button>' : '') +
+          '<button type="button" class="btn btn-secondary" data-upload-cancel>Cancel</button>' +
+          '<button type="submit" class="btn btn-primary">' + (t ? 'Save' : 'Add task') + '</button>' +
+        '</div>' +
+      '</form>';
+    const form = uploadDialog.querySelector('form');
+    const message = uploadDialog.querySelector('#task-message');
+    const setDisabled = (on) => form.querySelectorAll('button, input, select, textarea').forEach((el) => { el.disabled = on; });
+    uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+
+    const del = uploadDialog.querySelector('[data-task-delete]');
+    if (del) del.addEventListener('click', async () => {
+      if (!confirm('Delete “' + t.title + '”?')) return;
+      setDisabled(true);
+      const { error } = await db.from('tasks').delete().eq('id', t.id);
+      if (error) { setDisabled(false); message.textContent = 'Couldn’t delete: ' + error.message; return; }
+      uploadDialog.close();
+      refreshTasks();
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const row = {
+        title: form.title.value.trim(),
+        notes: form.notes.value.trim() || null,
+        owner_id: form.owner.value,
+        status: form.status.value,
+        due_at: form.due_date.value ? centralToISO(form.due_date.value, form.due_time.value) : null,
+      };
+      if (!row.title) { message.textContent = 'Give the task a name.'; return; }
+      setDisabled(true);
+      message.textContent = 'Saving…';
+      const { error } = t
+        ? await db.from('tasks').update(row).eq('id', t.id)
+        : await db.from('tasks').insert(row);
+      if (error) { setDisabled(false); message.textContent = 'Couldn’t save: ' + error.message; return; }
+      uploadDialog.close();
+      refreshTasks();
+    });
+
+    uploadDialog.showModal();
+    form.title.focus();
+  }
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-task-new]')) { openTaskDialog(null); return; }
+    const card = e.target.closest('[data-task]');
+    if (card) openTaskDialog(card.getAttribute('data-task'));
+  });
+  document.addEventListener('keydown', (e) => {
+    const card = e.target.closest && e.target.closest('[data-task]');
+    if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTaskDialog(card.getAttribute('data-task')); }
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.id === 'task-filter') { taskFilter = e.target.value; renderBoard(); }
+  });
+
+  // Drag and drop between columns (desktop). On phones, open the card and change Status.
+  document.addEventListener('dragstart', (e) => {
+    const card = e.target.closest && e.target.closest('.task-card[draggable="true"]');
+    if (!card) return;
+    e.dataTransfer.setData('text/plain', card.getAttribute('data-task'));
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('dragging');
+  });
+  document.addEventListener('dragend', (e) => {
+    if (e.target.classList) e.target.classList.remove('dragging');
+    document.querySelectorAll('.task-column.drop-target').forEach((c) => c.classList.remove('drop-target'));
+  });
+  document.addEventListener('dragover', (e) => {
+    const col = e.target.closest && e.target.closest('.task-column');
+    if (!col) return;
+    e.preventDefault();
+    document.querySelectorAll('.task-column.drop-target').forEach((c) => { if (c !== col) c.classList.remove('drop-target'); });
+    col.classList.add('drop-target');
+  });
+  document.addEventListener('drop', (e) => {
+    const col = e.target.closest && e.target.closest('.task-column');
+    if (!col) return;
+    e.preventDefault();
+    col.classList.remove('drop-target');
+    moveTask(e.dataTransfer.getData('text/plain'), col.getAttribute('data-column'));
+  });
+
   // ---------- home ----------
   function greetingFor(date) {
     const hour = date.getHours();
@@ -1767,6 +2053,7 @@
     if (viewId) html = viewerHTML(viewId);
     else if (spDoc) html = sharePointViewerHTML(spDoc);
     else if (route === 'home') html = homeHTML();
+    else if (route === 'tasks') html = tasksPageHTML();
     else if (SECTION_INDEXES[route]) html = SECTION_INDEXES[route]();
     else if (DOC_LISTS[route]) html = DOC_LISTS[route]() + (UPLOAD_ROUTES.indexOf(route) !== -1 ? uploadsSectionHTML(route) : '');
     else if (UPLOAD_ONLY_PAGES[route]) html = UPLOAD_ONLY_PAGES[route]();
@@ -1782,6 +2069,7 @@
     wireSearch();
     if (viewId) fillFilePreview(viewId);
     if (route === 'home') refreshRecentUpdates();
+    if (route === 'tasks') refreshTasks();
   }
 
   function searchResultHTML(item) {
@@ -1819,6 +2107,7 @@
     CURRENT_USER = session.user;
     renderAccount();
     await Promise.all([loadUploads(), loadIsAdmin()]);
+    subscribeToTasks();
     window.addEventListener('hashchange', render);
     render();
   });

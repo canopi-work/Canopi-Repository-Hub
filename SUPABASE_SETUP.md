@@ -68,3 +68,27 @@ select id from auth.users where email = 'name@canopi.work';
 - **Uploads are private; the built-in pages are not fully private.** The sign-in screen hides the site, but the page text inside `app.js` and the template files in `files/` are still plain files on GitHub Pages. Anyone who knows their exact address can download them, and the GitHub repo itself is public. Uploaded documents don't have this problem. Don't add sensitive text to `app.js` or `files/`; upload it instead.
 - **1:1 notes pages keep the Microsoft Forms "Contribute" button.** Uploads are visible to every member, and those notes must stay private to the two people involved.
 - **File size:** up to 50 MB per file (the Supabase free-plan limit). Free plan storage is 1 GB in total.
+
+## Task board and Slack alerts
+
+The **Tasks** page is a shared Kanban board (To do / In progress / Done). Everyone signed in sees every card and can add tasks for anyone; only a card's owner can move, edit, reassign or delete it. Due times are in US Central Time. The board's table comes from `supabase/schema.sql`.
+
+Slack alerts are optional and set up separately:
+
+1. In Slack, create the channel **#teamprogress**, then create an app at <https://api.slack.com/apps> > **Create New App** > **From scratch**, turn on **Incoming Webhooks**, and **Add New Webhook to Workspace** for #teamprogress. Copy the webhook URL.
+2. In Supabase SQL Editor, save the URL privately in Vault (replace `PASTE-WEBHOOK-URL` both times):
+   ```sql
+   do $$ declare sid uuid; begin
+     select id into sid from vault.secrets where name = 'slack_webhook_teamprogress';
+     if sid is null then perform vault.create_secret('PASTE-WEBHOOK-URL', 'slack_webhook_teamprogress', 'Slack #teamprogress');
+     else perform vault.update_secret(sid, 'PASTE-WEBHOOK-URL'); end if;
+   end $$;
+   ```
+3. Run all of [`supabase/slack_alerts.sql`](supabase/slack_alerts.sql). Every 5 minutes it posts once when an unfinished task is due within 24 hours, and once when it's overdue.
+4. To @mention owners, add each person's Slack member ID (Slack profile > ⋮ > **Copy member ID**):
+   ```sql
+   insert into public.slack_members (email, slack_user_id) values
+     ('name@canopi.work', 'U0123ABCDEF')
+   on conflict (email) do update set slack_user_id = excluded.slack_user_id;
+   ```
+   Anyone without an ID is named instead of mentioned.
