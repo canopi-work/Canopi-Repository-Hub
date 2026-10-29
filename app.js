@@ -1231,7 +1231,14 @@
     if (!bytes && bytes !== 0) return '';
     return bytes < 1024 * 1024 ? Math.max(1, Math.round(bytes / 1024)) + ' KB' : (bytes / 1024 / 1024).toFixed(1) + ' MB';
   }
-  function uploaderName(d) { return d.uploader_email ? d.uploader_email.split('@')[0] : 'a member'; }
+  // Display name from a work email: "angela@canopi.work" -> "Angela", "john.d@canopi.work" -> "John D."
+  function personName(email) {
+    if (!email) return '';
+    return email.split('@')[0].split(/[._-]+/).filter(Boolean)
+      .map((part) => part.length === 1 ? part.toUpperCase() + '.' : part[0].toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+  function uploaderName(d) { return personName(d.uploader_email) || 'a member'; }
 
   // ---------- what a link or file looks like in the viewer ----------
   function parseUrl(s) {
@@ -1706,7 +1713,7 @@
     const ms = new Date(t.due_at).getTime() - Date.now();
     return ms <= 0 ? 'overdue' : ms <= 24 * 60 * 60 * 1000 ? 'soon' : '';
   }
-  function memberName(email) { return email ? email.split('@')[0] : 'someone'; }
+  function memberName(email) { return personName(email) || 'someone'; }
   function isMine(t) { return !!CURRENT_USER && t.owner_id === CURRENT_USER.id; }
   function findTask(id) { return TASKS.find((t) => t.id === id); }
 
@@ -1796,7 +1803,7 @@
 
   function memberOptionsHTML(selectedId) {
     return MEMBERS.map((m) =>
-      '<option value="' + m.id + '"' + (m.id === selectedId ? ' selected' : '') + '>' + escapeHtml(m.email) + '</option>').join('');
+      '<option value="' + m.id + '"' + (m.id === selectedId ? ' selected' : '') + '>' + escapeHtml(memberName(m.email)) + '</option>').join('');
   }
   function statusOptionsHTML(selected) {
     return TASK_COLUMNS.map((c) => '<option value="' + c.key + '"' + (c.key === selected ? ' selected' : '') + '>' + c.label + '</option>').join('');
@@ -1811,10 +1818,10 @@
         '<div class="upload-form task-view">' +
           '<h2>' + escapeHtml(t.title) + '</h2>' +
           '<dl class="task-facts">' +
-            '<dt>Owner</dt><dd>' + escapeHtml(t.owner_email || '') + '</dd>' +
+            '<dt>Owner</dt><dd>' + escapeHtml(memberName(t.owner_email)) + '</dd>' +
             '<dt>Status</dt><dd>' + TASK_COLUMNS.filter((c) => c.key === t.status)[0].label + '</dd>' +
             '<dt>Due</dt><dd' + (state ? ' class="task-due-' + state + '"' : '') + '>' + (t.due_at ? formatDue(t.due_at) + (state === 'overdue' ? ' (overdue)' : '') : 'No due date') + '</dd>' +
-            '<dt>Added by</dt><dd>' + escapeHtml(t.created_by_email || 'someone') + ' on ' + formatDate(t.created_at) + '</dd>' +
+            '<dt>Added by</dt><dd>' + escapeHtml(memberName(t.created_by_email)) + ' on ' + formatDate(t.created_at) + '</dd>' +
           '</dl>' +
           (t.notes ? '<p class="task-view-notes">' + escapeHtml(t.notes) + '</p>' : '') +
           '<p class="field-hint">Only ' + escapeHtml(memberName(t.owner_email)) + ' can change this task.</p>' +

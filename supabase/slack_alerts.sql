@@ -54,7 +54,7 @@ begin
   loop
     who := coalesce(
       (select '<@' || s.slack_user_id || '>' from public.slack_members s where lower(s.email) = lower(t.owner_email)),
-      split_part(t.owner_email, '@', 1));
+      initcap(replace(split_part(t.owner_email, '@', 1), '.', ' ')));
     -- Slack treats &, < and > as markup.
     title := replace(replace(replace(t.title, '&', '&amp;'), '<', '&lt;'), '>', '&gt;');
     due := to_char(t.due_at at time zone 'America/Chicago', 'Dy Mon FMDD, FMHH12:MI AM') || ' CT';
