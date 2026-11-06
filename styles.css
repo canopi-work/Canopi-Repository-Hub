@@ -333,6 +333,7 @@ a.search-result-row:hover .search-result-title { text-decoration-color: currentC
 /* — member uploads — */
 .upload-meta { display: flex; align-items: center; gap: var(--space-2); font-size: 12px; color: var(--color-neutral-600); white-space: nowrap; }
 .upload-delete { font-size: 12px; color: #a1263a; margin-left: var(--space-2); }
+.upload-rename { font-size: 12px; margin-left: var(--space-2); }
 .upload-actions { margin-top: var(--space-4); }
 .modal {
   width: min(520px, calc(100vw - 32px)); border: none; border-radius: 16px; padding: var(--space-8);

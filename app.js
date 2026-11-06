@@ -1301,7 +1301,8 @@
       '<span class="upload-meta"><span class="tag tag-outline">' + escapeHtml(itemType(d)) + '</span>' +
         escapeHtml(uploaderName(d)) +
         (d.size_bytes ? ' &middot; ' + formatSize(d.size_bytes) : '') +
-        (canDelete(d) ? '<button type="button" class="link-button upload-delete" data-doc-delete="' + d.id + '">Delete</button>' : '') +
+        (canDelete(d) ? '<button type="button" class="link-button upload-rename" data-doc-rename="' + d.id + '">Rename</button>' +
+          '<button type="button" class="link-button upload-delete" data-doc-delete="' + d.id + '">Delete</button>' : '') +
       '</span></div>';
   }
   // The date written in a title, as YYYY-MM-DD: "26-09-17 Weekly…" and "2026-09-17 Weekly…" both give 2026-09-17.
@@ -1374,7 +1375,8 @@
       '<p class="detail-meta"><span class="tag tag-outline">' + escapeHtml(itemType(d)) + '</span> Added by ' + escapeHtml(uploaderName(d)) + ' on ' + formatDate(d.created_at) +
         (d.size_bytes ? ' &middot; ' + formatSize(d.size_bytes) : '') + '</p>' +
       '<div class="viewer-actions">' + actions +
-        (canDelete(d) ? '<button type="button" class="btn btn-secondary" data-doc-delete="' + d.id + '">Delete</button>' : '') +
+        (canDelete(d) ? '<button type="button" class="btn btn-secondary" data-doc-rename="' + d.id + '">Rename</button>' +
+          '<button type="button" class="btn btn-secondary" data-doc-delete="' + d.id + '">Delete</button>' : '') +
       '</div>' +
       '<div id="viewer">' + (d.url
         ? (embed.src ? frameHTML(embed.src, embed.video) + (embed.note ? '<p class="viewer-note">' + embed.note + '</p>' : '')
@@ -1631,8 +1633,48 @@
     const del = e.target.closest('[data-doc-delete]');
     if (del) { e.preventDefault(); deleteUpload(del.getAttribute('data-doc-delete')); return; }
     const dl = e.target.closest('[data-doc-download]');
-    if (dl) { e.preventDefault(); downloadUpload(dl.getAttribute('data-doc-download')); }
+    if (dl) { e.preventDefault(); downloadUpload(dl.getAttribute('data-doc-download')); return; }
+    const ren = e.target.closest('[data-doc-rename]');
+    if (ren) { e.preventDefault(); openRenameDialog(ren.getAttribute('data-doc-rename')); }
   });
+
+  // The uploader or an admin can change an item's title and section (supabase/schema.sql allows just those two).
+  function openRenameDialog(id) {
+    const d = findUpload(id);
+    if (!d) return;
+    uploadDialog.innerHTML =
+      '<form class="upload-form">' +
+        '<h2>Rename</h2>' +
+        '<label class="field"><span>Title</span><input type="text" name="title" maxlength="200" required value="' + escapeHtml(d.title) + '"></label>' +
+        '<label class="field"><span>Section</span><select name="section" required>' + sectionOptionsHTML(d.section) + '</select></label>' +
+        '<p class="field-hint">The file itself doesn&rsquo;t change; only how it&rsquo;s listed on the site.</p>' +
+        '<p class="form-message" id="rename-message"></p>' +
+        '<div class="modal-actions">' +
+          '<button type="button" class="btn btn-secondary" data-upload-cancel>Cancel</button>' +
+          '<button type="submit" class="btn btn-primary">Save</button>' +
+        '</div>' +
+      '</form>';
+    const form = uploadDialog.querySelector('form');
+    const message = uploadDialog.querySelector('#rename-message');
+    uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = form.title.value.trim();
+      if (!title) { message.textContent = 'The title can\u2019t be empty.'; return; }
+      form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = true; });
+      const { data, error } = await db.from('documents').update({ title, section: form.section.value }).eq('id', id).select('id');
+      if (error || !data || !data.length) {
+        form.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
+        message.textContent = 'Couldn\u2019t save: ' + (error ? error.message : 'only the uploader or an admin can rename this.');
+        return;
+      }
+      uploadDialog.close();
+      await loadUploads();
+      render();
+    });
+    uploadDialog.showModal();
+    form.title.select();
+  }
 
   function renderAccount() {
     document.getElementById('sidebar-account').innerHTML =

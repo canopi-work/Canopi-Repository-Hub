@@ -69,6 +69,15 @@ create policy "Owners and admins can delete documents" on public.documents
   for delete to authenticated
   using (uploaded_by = auth.uid() or public.is_admin());
 
+-- Renaming / moving: the uploader or an admin can change only the title and section.
+revoke update on public.documents from anon, authenticated;
+grant update (title, section) on public.documents to authenticated;
+drop policy if exists "Owners and admins can rename documents" on public.documents;
+create policy "Owners and admins can rename documents" on public.documents
+  for update to authenticated
+  using (uploaded_by = auth.uid() or public.is_admin())
+  with check (uploaded_by = auth.uid() or public.is_admin());
+
 -- ---------- file storage ----------
 -- Private bucket: files are only reachable through short-lived signed links
 -- handed to signed-in members. 50 MB per file (the Supabase free-plan maximum).
