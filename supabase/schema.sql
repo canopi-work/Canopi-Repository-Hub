@@ -78,6 +78,30 @@ create policy "Owners and admins can rename documents" on public.documents
   using (uploaded_by = auth.uid() or public.is_admin())
   with check (uploaded_by = auth.uid() or public.is_admin());
 
+-- ---------- admin changes to built-in items ----------
+-- Renames and deletions of the items written into app.js ("Published v1").
+-- key is the item's link (or route:/title: for items without one). Delete a row
+-- to undo that change.
+create table if not exists public.builtin_overrides (
+  key text primary key,
+  title text check (title is null or char_length(title) between 1 and 200),
+  hidden boolean not null default false,
+  updated_by uuid default auth.uid() references auth.users (id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+alter table public.builtin_overrides enable row level security;
+
+drop policy if exists "Members can see built-in changes" on public.builtin_overrides;
+create policy "Members can see built-in changes" on public.builtin_overrides
+  for select to authenticated
+  using (true);
+
+drop policy if exists "Admins can change built-in items" on public.builtin_overrides;
+create policy "Admins can change built-in items" on public.builtin_overrides
+  for all to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
 -- ---------- file storage ----------
 -- Private bucket: files are only reachable through short-lived signed links
 -- handed to signed-in members. 50 MB per file (the Supabase free-plan maximum).

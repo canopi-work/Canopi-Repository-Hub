@@ -124,17 +124,8 @@
   const PROJECTS_COMPLETED_MARKET_RESEARCH = [
     { title: 'Market Validation Research', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/r/personal/dixon_canopi_work/Documents/Dixon%20files%20to%20import/Canopi_Market_Validation_Research.docx?d=w8715d85a360748eeb5b1018850dbdd8c&csf=1&web=1&e=e8pGFS' },
   ];
-  const MEETINGS_TEAM_WEEKLY = [
-    { title: '26-09-17 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQDY2zd0m0mJTZeXebJDjC55AQx8W8YiIMSQqtGiTwndfXE?e=9QTGPE' },
-    { title: '26-09-10 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQDD1e51vOxvQITDX3OGjtdRAWOqklXk-YUNTXOP8wET7e8?e=Ssz2Sm' },
-    { title: '26-09-03 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQASXv5Z_D4MS4mibIJLlj8yAT6n7BW74o9GHEcbQEgqHW4?e=MKMXLk' },
-    { title: '26-08-27 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQD-FNy8ZKmVRoilg1yVbGHuAbDnR_8DAVjPmxnlwxmhymE?e=bOk3t1' },
-    { title: '26-08-20 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQAKwnPm_IFHQodWB0RApumjAf4nrcH-axPCoblltIWN0mg?e=aejEyI' },
-    { title: '26-08-13 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQDnel_cOL2GTZ68gxfhM1qxAfwNjUj5SIC93Qh2NPmms2Y?e=8jYxga' },
-    { title: '26-08-06 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQAbA1P-Z-T4R53_bKpgsqjkAUdpvZbvGe0-Nf3K3aeuC1M?e=6de7Sq' },
-    { title: '26-07-30 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQAoUkCNAUD8TrHJYPNogBlXAepocAYNGahOgtXFUW7509c?e=WHdNbe' },
-    { title: '26-07-23 Weekly Team Meeting Minutes', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:w:/g/personal/angela_canopi_work/IQBvGPkIfOIcTLvjdvtR24eqAfFmDPjsqMTUjwMnEVVSh-A?e=PIeAEs' },
-  ];
+  // Weekly minutes are uploaded through the site now; this holds only entries that live elsewhere.
+  const MEETINGS_TEAM_WEEKLY = [];
   const PROJECTS_COMPLETED_ARCHIVE = [
     { title: 'Sales Deck 2025 Q4', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:p:/g/personal/angela_canopi_work/IQCKQX8fw_jIWyxUHQ8hV9UXAWgVurvgJ9SVtT7uZYgJS5A?e=Sen75U' },
     { title: 'Pitch Deck 2025 Q4 V1', tag: 'Published v1', tagClass: 'tag-accent', href: 'https://canopi407-my.sharepoint.com/:p:/g/personal/angela_canopi_work/IQAQvAfx5-ztWIUQshIr7VNcAT91emyjVM6tyqnfN4N98Qo?e=IefG7a' },
@@ -305,6 +296,11 @@
       '<div class="section-cards">' + cards.map(sectionCardHTML).join('') + '</div>';
   }
   function docRowHTML(d) {
+    if (builtinHidden(d)) return '';
+    const shown = Object.assign({}, d, { title: builtinTitleHTML(d) });
+    return docRowInnerHTML(shown, builtinAdminHTML(d));
+  }
+  function docRowInnerHTML(d, adminHTML) {
     let link;
     if (d.route) link = '<a href="#' + d.route + '"><span>' + d.title + '</span></a>';
     else if (d.hrefExternal && SHAREPOINT_KEY_BY_HREF[d.href]) {
@@ -316,7 +312,7 @@
     else if (d.hrefDownload) link = '<a href="' + d.href + '" download><span>' + d.title + '</span></a>';
     else link = '<span class="plain">' + d.title + '</span>';
     const tag = d.tag ? '<span class="tag ' + d.tagClass + '">' + d.tag + '</span>' : '';
-    return '<div class="doclist-row">' + link + tag + '</div>';
+    return '<div class="doclist-row">' + link + (adminHTML ? '<span class="upload-meta">' + tag + adminHTML + '</span>' : tag) + '</div>';
   }
   function docListHTML(crumbItems, title, lead, rows) {
     return crumb(crumbItems) + '<h1>' + title + '</h1>' +
@@ -1209,6 +1205,39 @@
   let CURRENT_USER = null;
   let IS_ADMIN = false;
 
+  // ---------- admin changes to built-in items ----------
+  // Items written into this file (the "Published v1" rows) can't be edited from
+  // the site, so an admin's renames and deletions are stored in the
+  // builtin_overrides table and applied whenever a list is drawn. To bring a
+  // deleted item back, delete its row from builtin_overrides in Supabase.
+  let BUILTIN_OVERRIDES = {};
+  function htmlToText(html) { const t = document.createElement('textarea'); t.innerHTML = html; return t.value; }
+  function builtinKey(d) { return d.href || (d.route ? 'route:' + d.route : 'title:' + htmlToText(d.title)); }
+  function builtinOverride(d) { return BUILTIN_OVERRIDES[builtinKey(d)]; }
+  function builtinHidden(d) { const o = builtinOverride(d); return !!(o && o.hidden); }
+  function builtinTitleHTML(d) { const o = builtinOverride(d); return o && o.title ? escapeHtml(o.title) : d.title; }
+  function builtinAdminHTML(d) {
+    if (!IS_ADMIN) return '';
+    const key = escapeHtml(builtinKey(d));
+    const o = builtinOverride(d);
+    const title = escapeHtml(o && o.title ? o.title : htmlToText(d.title));
+    return '<button type="button" class="link-button upload-rename" data-builtin-rename="' + key + '" data-builtin-title="' + title + '">Rename</button>' +
+      '<button type="button" class="link-button upload-delete" data-builtin-delete="' + key + '" data-builtin-title="' + title + '">Delete</button>';
+  }
+  async function loadOverrides() {
+    const { data, error } = await db.from('builtin_overrides').select('key, title, hidden');
+    if (error) return; // table not created yet: show items as written
+    BUILTIN_OVERRIDES = {};
+    data.forEach((o) => { BUILTIN_OVERRIDES[o.key] = o; });
+  }
+  async function saveOverride(key, patch) {
+    const { error } = await db.from('builtin_overrides').upsert(Object.assign({ key }, patch));
+    if (error) return error;
+    await loadOverrides();
+    render();
+    return null;
+  }
+
   function sectionGroup(route) { return SECTION_PREFIXES[route.split('-')[0]] || 'Other'; }
   function sectionPath(route) { return sectionGroup(route) + ' › ' + (TITLES[route] || route); }
   function uploadsFor(route) { return UPLOADS.filter((d) => d.section === route); }
@@ -1405,7 +1434,7 @@
       { label: escapeHtml(TITLES[doc.section] || doc.section), route: doc.section },
       { label: escapeHtml(doc.title) },
     ]) +
-      '<h1>' + escapeHtml(doc.title) + '</h1>' +
+      '<h1>' + builtinTitleHTML({ href: doc.href, title: escapeHtml(doc.title) }) + '</h1>' +
       '<p class="detail-meta"><span class="tag tag-outline">' + doc.kind + '</span> Stored in SharePoint</p>' +
       '<div class="empty-state viewer-empty">' +
         '<span class="empty-state-icon">' + icon(ICON_UPLOAD, 30) + '</span>' +
@@ -1635,8 +1664,46 @@
     const dl = e.target.closest('[data-doc-download]');
     if (dl) { e.preventDefault(); downloadUpload(dl.getAttribute('data-doc-download')); return; }
     const ren = e.target.closest('[data-doc-rename]');
-    if (ren) { e.preventDefault(); openRenameDialog(ren.getAttribute('data-doc-rename')); }
+    if (ren) { e.preventDefault(); openRenameDialog(ren.getAttribute('data-doc-rename')); return; }
+    const bren = e.target.closest('[data-builtin-rename]');
+    if (bren) { e.preventDefault(); openBuiltinRenameDialog(bren.getAttribute('data-builtin-rename'), bren.getAttribute('data-builtin-title')); return; }
+    const bdel = e.target.closest('[data-builtin-delete]');
+    if (bdel) {
+      e.preventDefault();
+      if (!confirm('Delete \u201c' + bdel.getAttribute('data-builtin-title') + '\u201d from the site? An admin can bring it back from Supabase.')) return;
+      saveOverride(bdel.getAttribute('data-builtin-delete'), { hidden: true }).then((err) => { if (err) alert('Couldn\u2019t delete: ' + err.message); });
+    }
   });
+
+  function openBuiltinRenameDialog(key, currentTitle) {
+    uploadDialog.innerHTML =
+      '<form class="upload-form">' +
+        '<h2>Rename</h2>' +
+        '<label class="field"><span>Title</span><input type="text" name="title" maxlength="200" required value="' + escapeHtml(currentTitle) + '"></label>' +
+        '<p class="form-message" id="rename-message"></p>' +
+        '<div class="modal-actions">' +
+          '<button type="button" class="btn btn-secondary" data-upload-cancel>Cancel</button>' +
+          '<button type="submit" class="btn btn-primary">Save</button>' +
+        '</div>' +
+      '</form>';
+    const form = uploadDialog.querySelector('form');
+    uploadDialog.querySelector('[data-upload-cancel]').addEventListener('click', () => uploadDialog.close());
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = form.title.value.trim();
+      if (!title) return;
+      form.querySelectorAll('button, input').forEach((el) => { el.disabled = true; });
+      const err = await saveOverride(key, { title });
+      if (err) {
+        form.querySelectorAll('button, input').forEach((el) => { el.disabled = false; });
+        uploadDialog.querySelector('#rename-message').textContent = 'Couldn\u2019t save: ' + err.message;
+        return;
+      }
+      uploadDialog.close();
+    });
+    uploadDialog.showModal();
+    form.title.select();
+  }
 
   // The uploader or an admin can change an item's title and section (supabase/schema.sql allows just those two).
   function openRenameDialog(id) {
@@ -2171,7 +2238,8 @@
       const q = input.value.trim().toLowerCase();
       if (!q) { resultsEl.innerHTML = ''; return; }
       const uploaded = UPLOADS.map((d) => ({ title: escapeHtml(d.title), meta: sectionPath(d.section) + ' \u203a ' + itemType(d), route: VIEW_PREFIX + d.id }));
-      const matches = SEARCH_INDEX.concat(uploaded).filter((i) => (i.title + ' ' + (i.keywords || '') + ' ' + (i.meta || '')).toLowerCase().indexOf(q) !== -1).slice(0, 20);
+      const builtIn = SEARCH_INDEX.filter((i) => !builtinHidden(i)).map((i) => Object.assign({}, i, { title: builtinTitleHTML(i) }));
+      const matches = builtIn.concat(uploaded).filter((i) => (i.title + ' ' + (i.keywords || '') + ' ' + (i.meta || '')).toLowerCase().indexOf(q) !== -1).slice(0, 20);
       if (!matches.length) {
         resultsEl.innerHTML = '<div class="search-results"><div class="search-empty">No matches</div></div>';
         return;
@@ -2184,7 +2252,7 @@
   window.CanopiAuth.onReady(async (session) => {
     CURRENT_USER = session.user;
     renderAccount();
-    await Promise.all([loadUploads(), loadIsAdmin()]);
+    await Promise.all([loadUploads(), loadIsAdmin(), loadOverrides()]);
     subscribeToTasks();
     window.addEventListener('hashchange', render);
     render();
