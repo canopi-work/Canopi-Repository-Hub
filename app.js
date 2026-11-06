@@ -545,9 +545,10 @@
       "Stakeholder's Records", 'Stakeholder records for Canopi projects.',
       PROJECTS_DOCUMENTATION_STAKEHOLDER.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefExternal: !!s.href }))
     ),
-    'meetings-team-weekly': () => docListHTML(
+    'meetings-team-weekly': () => logbookHTML(
       [{ label: 'Home', route: 'home' }, { label: 'Meetings', route: 'meetings' }, { label: 'Team Meetings', route: 'meetings-team' }, { label: 'Weekly Team Meeting Notes' }],
-      'Weekly Team Meeting Notes', 'Minutes from the weekly team meeting.',
+      'Weekly Team Meeting Notes', 'Minutes from the weekly team meeting, newest first.',
+      'meetings-team-weekly',
       MEETINGS_TEAM_WEEKLY.map((s) => ({ title: s.title, tag: s.tag, tagClass: s.tagClass, href: s.href, hrefDownload: !!s.download, hrefExternal: !s.download }))
     ),
     'projects-completed-archive': () => docListHTML(
@@ -1298,14 +1299,42 @@
     return '<div class="doclist-row upload-row">' +
       '<a href="#' + VIEW_PREFIX + d.id + '"><span>' + escapeHtml(d.title) + '</span></a>' +
       '<span class="upload-meta"><span class="tag tag-outline">' + escapeHtml(itemType(d)) + '</span>' +
-        escapeHtml(uploaderName(d)) + ' &middot; ' + formatDate(d.created_at) +
+        escapeHtml(uploaderName(d)) +
         (d.size_bytes ? ' &middot; ' + formatSize(d.size_bytes) : '') +
         (canDelete(d) ? '<button type="button" class="link-button upload-delete" data-doc-delete="' + d.id + '">Delete</button>' : '') +
       '</span></div>';
   }
+  // The date written in a title, as YYYY-MM-DD: "26-09-17 Weekly…" and "2026-09-17 Weekly…" both give 2026-09-17.
+  function titleDate(title) {
+    const m = /(?:^|\D)(\d{4}|\d{2})-(\d{1,2})-(\d{1,2})(?!\d)/.exec(title || '');
+    if (!m) return '';
+    const pad = (n) => (n.length < 2 ? '0' : '') + n;
+    return (m[1].length === 2 ? '20' + m[1] : m[1]) + '-' + pad(m[2]) + '-' + pad(m[3]);
+  }
+  // Newest first by the date in the title; items without one go last, newest upload first.
+  function byTitleDateDesc(a, b) {
+    const da = titleDate(a.title), db_ = titleDate(b.title);
+    if (da !== db_) return !da ? 1 : !db_ ? -1 : da < db_ ? 1 : -1;
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  }
+
+  // A dated log (e.g. weekly minutes): built-in entries and member uploads in one
+  // list, newest date first.
+  const LOGBOOK_ROUTES = { 'meetings-team-weekly': true };
+  function logbookHTML(crumbItems, title, lead, route, builtIn) {
+    const copies = copyIdsOfSharePointDocs();
+    const rows = builtIn.map((d) => ({ title: d.title, html: docRowHTML(d) }))
+      .concat(uploadsFor(route).filter((d) => !copies[d.id]).map((d) => ({ title: d.title, created_at: d.created_at, html: uploadRowHTML(d) })))
+      .sort(byTitleDateDesc);
+    return crumb(crumbItems) + '<h1>' + title + '</h1>' +
+      '<p class="section-lead">' + lead + '</p>' +
+      '<div class="doclist">' + rows.map((r) => r.html).join('') + '</div>' +
+      '<div class="upload-actions">' + uploadButtonHTML(route) + '</div>';
+  }
+
   function uploadsSectionHTML(route, standalone) {
     const copies = copyIdsOfSharePointDocs();
-    const docs = uploadsFor(route).filter((d) => !copies[d.id]);
+    const docs = uploadsFor(route).filter((d) => !copies[d.id]).sort(byTitleDateDesc);
     const list = docs.length
       ? '<div class="doclist">' + docs.map(uploadRowHTML).join('') + '</div>'
       : '<p class="section-lead">Nothing added here yet.</p>';
@@ -2062,7 +2091,7 @@
     else if (route === 'home') html = homeHTML();
     else if (route === 'tasks') html = tasksPageHTML();
     else if (SECTION_INDEXES[route]) html = SECTION_INDEXES[route]();
-    else if (DOC_LISTS[route]) html = DOC_LISTS[route]() + (UPLOAD_ROUTES.indexOf(route) !== -1 ? uploadsSectionHTML(route) : '');
+    else if (DOC_LISTS[route]) html = DOC_LISTS[route]() + (UPLOAD_ROUTES.indexOf(route) !== -1 && !LOGBOOK_ROUTES[route] ? uploadsSectionHTML(route) : '');
     else if (UPLOAD_ONLY_PAGES[route]) html = UPLOAD_ONLY_PAGES[route]();
     else if (DETAIL_PAGES[route]) html = DETAIL_PAGES[route];
     else html = homeHTML();
